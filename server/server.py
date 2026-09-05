@@ -113,13 +113,36 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# SendInput structures for ultra-low latency hardware injection
+if user32:
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", ctypes.c_long),
+            ("dy", ctypes.c_long),
+            ("mouseData", ctypes.c_ulong),
+            ("dwFlags", ctypes.c_ulong),
+            ("time", ctypes.c_ulong),
+            ("dwExtraInfo", ctypes.c_void_p),
+        ]
+
+    class INPUT_UNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [
+            ("type", ctypes.c_ulong),
+            ("u", INPUT_UNION),
+        ]
+
+    INPUT_MOUSE = 0
+
 
 _desktop_attached = threading.local()
 
 def ensure_desktop():
     """
     Ensure the current thread/greenlet is attached to the active interactive
-    desktop (WinSta0\\Default) so user32.mouse_event has permission to inject input.
+    desktop (WinSta0\\Default) so user32.mouse_event / SendInput has permission to inject input.
     Cached per-thread to eliminate repeated kernel handle opens/closes.
     """
     if getattr(_desktop_attached, "attached", False):
@@ -138,6 +161,19 @@ def ensure_desktop():
 def native_mouse_move(dx, dy):
     ensure_desktop()
     if user32:
+        try:
+            inp = INPUT()
+            inp.type = INPUT_MOUSE
+            inp.u.mi.dx = int(dx)
+            inp.u.mi.dy = int(dy)
+            inp.u.mi.mouseData = 0
+            inp.u.mi.dwFlags = MOUSEEVENTF_MOVE
+            inp.u.mi.time = 0
+            inp.u.mi.dwExtraInfo = None
+            if user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) == 1:
+                return
+        except Exception:
+            pass
         try:
             user32.mouse_event(MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
             return
@@ -219,11 +255,67 @@ def native_mouse_scroll(dx, dy):
         print("Fallback mouse.scroll error:", e, flush=True)
 
 
-# Subpixel precision accumulators
+# Subpixel precision accumulators with balanced rounding (eliminates deadzone & stickiness)
 subpixel_x = 0.0
 subpixel_y = 0.0
-subpixel_scroll_x = 0.0
-subpixel_scroll_y = 0.0
+
+def process_mouse_delta(raw_dx, raw_dy):
+    global subpixel_x, subpixel_y
+    total_x = raw_dx + subpixel_x
+    total_y = raw_dy + subpixel_y
+
+    # Round to nearest integer when >= 0.5 to prevent deadzones during slow aiming
+    step_x = int(round(total_x)) if abs(total_x) >= 0.5 else 0
+    step_y = int(round(total_y)) if abs(total_y) >= 0.5 else 0
+
+    subpixel_x = total_x - step_x
+    subpixel_y = total_y - step_y
+
+    if step_x != 0 or step_y != 0:
+        native_mouse_move(step_x, step_y)
+
+
+# ----------------- Ultra-Low Latency UDP Input Server (Port 5002) ----------------- #
+def run_udp_input_server(port=5002):
+    """
+    Dedicated high-priority UDP socket server for ultra-low latency motion streaming.
+    Bypasses Gevent, HTTP, and WebSocket layers entirely for <1ms transit.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except Exception:
+        pass
+
+    try:
+        sock.bind(("0.0.0.0", port))
+        print(f"  * UDP Motion Engine: Active on port {port} (<1ms direct pipeline)", flush=True)
+    except Exception as e:
+        print(f"  * Warning: Failed to bind UDP Motion Engine on port {port}: {e}", flush=True)
+        return
+
+    while True:
+        try:
+            data, _ = sock.recvfrom(256)
+            if not data:
+                continue
+            # Format: 'M <dx> <dy>' for move, 'S <dx> <dy>' for scroll
+            msg = data.decode("utf-8", errors="ignore").strip()
+            parts = msg.split()
+            if not parts:
+                continue
+            cmd = parts[0]
+            if cmd == "M" and len(parts) >= 3:
+                dx = float(parts[1])
+                dy = float(parts[2])
+                process_mouse_delta(dx, dy)
+            elif cmd == "S" and len(parts) >= 3:
+                dx = float(parts[1])
+                dy = float(parts[2])
+                native_mouse_scroll(dx, dy)
+        except Exception:
+            pass
+
 
 @socketio.on("connect")
 def handle_connect(auth=None):
@@ -242,19 +334,10 @@ def handle_ping_check():
 
 @socketio.on("move")
 def handle_move(data):
-    global subpixel_x, subpixel_y
     try:
-        dx = float(data.get("dx", 0)) + subpixel_x
-        dy = float(data.get("dy", 0)) + subpixel_y
-
-        int_dx = int(dx)
-        int_dy = int(dy)
-
-        subpixel_x = dx - int_dx
-        subpixel_y = dy - int_dy
-
-        if int_dx != 0 or int_dy != 0:
-            native_mouse_move(int_dx, int_dy)
+        dx = float(data.get("dx", 0))
+        dy = float(data.get("dy", 0))
+        process_mouse_delta(dx, dy)
     except Exception as e:
         print("Error in move:", e, flush=True)
 
@@ -507,7 +590,7 @@ def get_lan_ip():
     return ip
 
 
-def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001):
+def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001, udp_input_port=5002):
     """
     Broadcasts UDP announcements periodically on the LAN so mobile apps
     can auto-discover the host PC without typing IP addresses.
@@ -519,7 +602,8 @@ def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001):
         "app": "RemoteTrackpadPro",
         "name": socket.gethostname(),
         "ip": lan_ip,
-        "port": port
+        "port": port,
+        "udp_port": udp_input_port
     }).encode("utf-8")
 
     parts = lan_ip.split(".")
@@ -535,7 +619,7 @@ def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001):
         time.sleep(2.0)
 
 
-def print_startup_banner(lan_ip, port=5000):
+def print_startup_banner(lan_ip, port=5000, udp_port=5002):
     import sys
     try:
         if sys.stdout.encoding.lower() != "utf-8":
@@ -547,10 +631,11 @@ def print_startup_banner(lan_ip, port=5000):
     print("\n" + "=" * 62)
     print("      [REMOTE TRACKPAD & GAMEPAD PRO - HOST SERVER]")
     print("=" * 62)
-    print(f"  * Host PC:       {socket.gethostname()}")
-    print(f"  * Local IP:      {lan_ip}")
-    print(f"  * WebSocket:     {url}")
-    print(f"  * UDP Discovery: Port 5001 (Active Auto-Beacon)")
+    print(f"  * Host PC:           {socket.gethostname()}")
+    print(f"  * Local IP:          {lan_ip}")
+    print(f"  * WebSocket:         {url}")
+    print(f"  * UDP Discovery:     Port 5001 (Active Auto-Beacon)")
+    print(f"  * UDP Motion Engine: Port {udp_port} (<1ms Direct Hardware Pipeline)")
     print("=" * 62)
 
     if qrcode:
@@ -567,15 +652,23 @@ def print_startup_banner(lan_ip, port=5000):
 
 if __name__ == "__main__":
     lan_ip = get_lan_ip()
-    print_startup_banner(lan_ip, port=5000)
+    print_startup_banner(lan_ip, port=5000, udp_port=5002)
 
-    # Start UDP discovery beacon in background daemon thread
+    # 1. Start UDP Discovery Beacon in background daemon thread
     beacon_thread = threading.Thread(
         target=run_udp_discovery_beacon,
-        args=(lan_ip, 5000, 5001),
+        args=(lan_ip, 5000, 5001, 5002),
         daemon=True
     )
     beacon_thread.start()
 
-    # debug=True so we see errors clearly in the terminal
+    # 2. Start Ultra-Low Latency UDP Motion Engine in background daemon thread
+    udp_thread = threading.Thread(
+        target=run_udp_input_server,
+        args=(5002,),
+        daemon=True
+    )
+    udp_thread.start()
+
+    # 3. Start Gevent WebSocket / HTTP Server
     socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)

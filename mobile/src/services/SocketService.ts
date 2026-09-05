@@ -1,4 +1,5 @@
 import io, { Socket } from 'socket.io-client';
+import { udpInputService } from './UdpInputService';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -11,15 +12,6 @@ class SocketService {
   private latency: number = 0;
   private listeners: Set<StatusListener> = new Set();
   private pingInterval: any = null;
-
-  // Batching accumulators
-  private pendingMoveX: number = 0;
-  private pendingMoveY: number = 0;
-  private moveRafId: number | null = null;
-
-  private pendingScrollX: number = 0;
-  private pendingScrollY: number = 0;
-  private scrollRafId: number | null = null;
 
   public subscribe(listener: StatusListener): () => void {
     this.listeners.add(listener);
@@ -36,7 +28,7 @@ class SocketService {
     this.listeners.forEach((listener) => listener(this.status, this.latency));
   }
 
-  public connect(ip: string, port: number = 5000) {
+  public connect(ip: string, port: number = 5000, udpPort: number = 5002) {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -45,6 +37,9 @@ class SocketService {
     const host = `http://${ip}:${port}`;
     this.currentHost = host;
     this.setStatus('connecting');
+
+    // Initialize ultra-low latency UDP motion streamer
+    udpInputService.setTarget(ip, udpPort);
 
     this.socket = io(host, {
       transports: ['websocket', 'polling'],
@@ -74,6 +69,7 @@ class SocketService {
 
   public disconnect() {
     this.stopPingMonitor();
+    udpInputService.close();
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -114,9 +110,14 @@ class SocketService {
     this.latency = 0;
   }
 
-  // ==================== Mouse Operations (Zero-Lag Direct Dispatch) ====================
+  // ==================== Mouse Operations (Zero-Lag UDP Motion Pipeline) ====================
 
   public move(dx: number, dy: number) {
+    // 1. Try instantaneous UDP motion pipeline (<1ms, no Head-of-Line blocking)
+    const sentViaUdp = udpInputService.sendMove(dx, dy);
+    if (sentViaUdp) return;
+
+    // 2. Reliable fallback to WebSocket TCP if UDP socket not ready
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('move', { dx, dy });
   }
@@ -137,6 +138,11 @@ class SocketService {
   }
 
   public scroll(dx: number, dy: number) {
+    // 1. Try instantaneous UDP scroll pipeline
+    const sentViaUdp = udpInputService.sendScroll(dx, dy);
+    if (sentViaUdp) return;
+
+    // 2. Reliable fallback to WebSocket TCP
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('scroll', { dx, dy });
   }

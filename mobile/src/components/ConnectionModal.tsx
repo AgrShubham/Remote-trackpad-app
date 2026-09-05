@@ -80,11 +80,11 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({ visible, onClo
     } catch (e) {}
   };
 
-  const handleConnect = (targetIp: string, targetPort: string = '5000') => {
+  const handleConnect = (targetIp: string, targetPort: string = '5000', udpPort: number = 5002) => {
     if (!targetIp.trim()) return;
     const p = parseInt(targetPort, 10) || 5000;
     saveRecentServer(`${targetIp.trim()}:${p}`);
-    socketService.connect(targetIp.trim(), p);
+    socketService.connect(targetIp.trim(), p, udpPort);
   };
 
   const handleDisconnect = () => {
@@ -219,7 +219,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({ visible, onClo
                       <TouchableOpacity
                         key={`${host.ip}:${host.port}`}
                         style={styles.hostCard}
-                        onPress={() => handleConnect(host.ip, host.port.toString())}
+                        onPress={() => handleConnect(host.ip, host.port.toString(), host.udpPort || 5002)}
                         activeOpacity={0.88}
                         focusable={false}
                       >

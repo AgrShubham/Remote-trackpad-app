@@ -4,6 +4,7 @@ export interface DiscoveredHost {
   name: string;
   ip: string;
   port: number;
+  udpPort?: number;
   lastSeen: number;
 }
 
@@ -43,6 +44,7 @@ class DiscoveryService {
               name: data.name || rinfo.address,
               ip: data.ip,
               port: data.port || 5000,
+              udpPort: data.udp_port || 5002,
               lastSeen: Date.now(),
             });
             this.notify();

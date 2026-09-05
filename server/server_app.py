@@ -120,6 +120,30 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# SendInput structures for ultra-low latency hardware injection
+if user32:
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [
+            ("dx", ctypes.c_long),
+            ("dy", ctypes.c_long),
+            ("mouseData", ctypes.c_ulong),
+            ("dwFlags", ctypes.c_ulong),
+            ("time", ctypes.c_ulong),
+            ("dwExtraInfo", ctypes.c_void_p),
+        ]
+
+    class INPUT_UNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _fields_ = [
+            ("type", ctypes.c_ulong),
+            ("u", INPUT_UNION),
+        ]
+
+    INPUT_MOUSE = 0
+
+
 _desktop_attached = threading.local()
 
 def ensure_desktop():
@@ -138,6 +162,19 @@ def ensure_desktop():
 def native_mouse_move(dx, dy):
     ensure_desktop()
     if user32:
+        try:
+            inp = INPUT()
+            inp.type = INPUT_MOUSE
+            inp.u.mi.dx = int(dx)
+            inp.u.mi.dy = int(dy)
+            inp.u.mi.mouseData = 0
+            inp.u.mi.dwFlags = MOUSEEVENTF_MOVE
+            inp.u.mi.time = 0
+            inp.u.mi.dwExtraInfo = None
+            if user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) == 1:
+                return
+        except Exception:
+            pass
         try:
             user32.mouse_event(MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
             return
@@ -201,9 +238,9 @@ def native_mouse_scroll(dx, dy):
     if user32:
         try:
             if dy != 0:
-                user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(dy * 120), 0)
+                user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(dy * 20), 0)
             if dx != 0:
-                user32.mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, int(dx * 120), 0)
+                user32.mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, int(dx * 20), 0)
             return
         except Exception:
             pass
@@ -211,6 +248,67 @@ def native_mouse_scroll(dx, dy):
         mouse.scroll(int(dx), int(dy))
     except Exception:
         pass
+
+
+# Subpixel precision accumulators with balanced rounding (eliminates deadzone & stickiness)
+subpixel_x = 0.0
+subpixel_y = 0.0
+
+def process_mouse_delta(raw_dx, raw_dy):
+    global subpixel_x, subpixel_y
+    total_x = raw_dx + subpixel_x
+    total_y = raw_dy + subpixel_y
+
+    step_x = int(round(total_x)) if abs(total_x) >= 0.5 else 0
+    step_y = int(round(total_y)) if abs(total_y) >= 0.5 else 0
+
+    subpixel_x = total_x - step_x
+    subpixel_y = total_y - step_y
+
+    if step_x != 0 or step_y != 0:
+        native_mouse_move(step_x, step_y)
+
+
+# ----------------- Ultra-Low Latency UDP Input Server (Port 5002) ----------------- #
+def run_udp_input_server(port=5002):
+    """
+    Dedicated high-priority UDP socket server for ultra-low latency motion streaming.
+    Bypasses Gevent, HTTP, and WebSocket layers entirely for <1ms transit.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    except Exception:
+        pass
+
+    try:
+        sock.bind(("0.0.0.0", port))
+        print(f"  * UDP Motion Engine: Active on port {port} (<1ms direct hardware pipeline)", flush=True)
+    except Exception as e:
+        print(f"  * Warning: Failed to bind UDP Motion Engine on port {port}: {e}", flush=True)
+        return
+
+    while True:
+        try:
+            data, _ = sock.recvfrom(256)
+            if not data:
+                continue
+            msg = data.decode("utf-8", errors="ignore").strip()
+            parts = msg.split()
+            if not parts:
+                continue
+            cmd = parts[0]
+            if cmd == "M" and len(parts) >= 3:
+                dx = float(parts[1])
+                dy = float(parts[2])
+                process_mouse_delta(dx, dy)
+            elif cmd == "S" and len(parts) >= 3:
+                dx = float(parts[1])
+                dy = float(parts[2])
+                native_mouse_scroll(dx, dy)
+        except Exception:
+            pass
+
 
 # ----------------- SocketIO Event Handlers ----------------- #
 @socketio.on("connect")
@@ -236,7 +334,7 @@ def handle_move(data):
     try:
         dx = float(data.get("dx", 0))
         dy = float(data.get("dy", 0))
-        native_mouse_move(dx, dy)
+        process_mouse_delta(dx, dy)
     except Exception:
         pass
 
@@ -421,14 +519,15 @@ def get_lan_ip():
         s.close()
     return ip
 
-def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001):
+def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001, udp_input_port=5002):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     payload = json.dumps({
         "app": "RemoteTrackpadPro",
         "name": socket.gethostname(),
         "ip": lan_ip,
-        "port": port
+        "port": port,
+        "udp_port": udp_input_port
     }).encode("utf-8")
     parts = lan_ip.split(".")
     subnet_bcast = ".".join(parts[:3]) + ".255" if len(parts) == 4 else None
@@ -531,6 +630,7 @@ class ControlDashboard:
         self.add_info_row(info_card, "Local IP:", self.lan_ip, 1)
         self.add_info_row(info_card, "WebSocket Port:", str(self.port), 2)
         self.add_info_row(info_card, "UDP Beacon:", "Port 5001 (Auto-Discovery)", 3)
+        self.add_info_row(info_card, "UDP Motion Engine:", "Port 5002 (<1ms Hardware)", 4)
 
         # QR Code Card
         qr_card = tk.Frame(self.root, bg="#1a1c28", padx=14, pady=10, highlightthickness=1, highlightbackground="#2d3248")
@@ -682,22 +782,30 @@ def main():
     # 1. Start UDP Discovery Beacon
     beacon_thread = threading.Thread(
         target=run_udp_discovery_beacon,
-        args=(lan_ip, port, 5001),
+        args=(lan_ip, port, 5001, 5002),
         daemon=True
     )
     beacon_thread.start()
 
-    # 2. Start WebSocket Server in Gevent thread
+    # 2. Start Ultra-Low Latency UDP Motion Engine (Port 5002)
+    udp_input_thread = threading.Thread(
+        target=run_udp_input_server,
+        args=(5002,),
+        daemon=True
+    )
+    udp_input_thread.start()
+
+    # 3. Start WebSocket Server in Gevent thread
     server_thread = threading.Thread(
         target=lambda: socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True),
         daemon=True
     )
     server_thread.start()
 
-    # 3. If run by user double-click, pop up the dashboard initially
+    # 4. If run by user double-click, pop up the dashboard initially
     threading.Thread(target=dashboard.show, daemon=True).start()
 
-    # 4. Run System Tray in main thread (required on Windows for message loop)
+    # 5. Run System Tray in main thread (required on Windows for message loop)
     setup_system_tray(lan_ip, port)
 
 if __name__ == "__main__":

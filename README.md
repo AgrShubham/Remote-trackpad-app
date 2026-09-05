@@ -218,27 +218,26 @@ sequenceDiagram
     autonumber
     participant Phone as 📱 Android Device
     participant LAN as 📶 Wi-Fi LAN / Hotspot
-    participant Server as 💻 Windows Host Server (Port 5000)
+    participant Server as 💻 Windows Host Server (Port 5000 & 5002)
     participant OS as 🪟 Windows OS Kernel (user32)
 
-    Note over Server: Server starts UDP beacon thread (Port 5001)
-    Server->>LAN: UDP Broadcast: {"name": "PC", "ip": "192.168.1.5", "port": 5000}
+    Note over Server: Server starts UDP beacon (Port 5001) & UDP Motion Engine (Port 5002)
+    Server->>LAN: UDP Broadcast: {"name": "PC", "ip": "192.168.1.5", "port": 5000, "udp_port": 5002}
     Phone->>LAN: DiscoveryService listens on UDP 5001
-    LAN-->>Phone: Datagram received -> DiscoveredHost registered!
+    LAN-->>Phone: Datagram received -> Host registered with UDP Motion port!
     
-    Phone->>Server: WebSocket Connect (Socket.IO over Gevent)
+    Phone->>Server: WebSocket Connect (Port 5000 for stateful keys & clicks)
     Server-->>Phone: Connection ACK (Ping monitor starts)
     
     rect rgb(20, 25, 40)
-        Note over Phone, OS: High-Frequency Motion & Input Pipeline (<5ms)
-        Phone->>Server: socket.emit('move', {dx, dy})
-        Server->>OS: user32.SetThreadDesktop(hDesk) [Cached Thread-Local]
-        Server->>OS: user32.mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, 0)
+        Note over Phone, OS: Zero-Lag UDP Motion Pipeline (<1ms, No Head-of-Line Blocking)
+        Phone->>Server: UDP Datagram: "M <dx> <dy>" (Direct to Port 5002)
+        Server->>OS: user32.SendInput(INPUT_MOUSE, dx, dy) [Instant Kernel Injection]
     end
 
     rect rgb(25, 35, 30)
-        Note over Phone, OS: Mechanical Keyboard & Gamepad Inputs
-        Phone->>Server: socket.emit('key', {key: 'w', action: 'press'})
+        Note over Phone, OS: Mechanical Keyboard & Gamepad Inputs (TCP WebSocket)
+        Phone->>Server: socket.emit('key', {name: 'w', action: 'press'})
         Server->>OS: pynput.keyboard.press('w')
     end
 ```

@@ -84,25 +84,39 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
     inertiaRaf.current = requestAnimationFrame(loop);
   };
 
-  // macOS Piecewise Velocity Acceleration Ballistics
-  const computeAcceleratedDelta = (rawDx: number, rawDy: number, dt: number) => {
-    const safeDt = Math.max(dt, 4);
-    const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
-    const v = dist / safeDt;
+  // 120Hz Micro-Accumulator to eliminate JS thread congestion and radio buffer lag
+  const pendingDx = useRef<number>(0);
+  const pendingDy = useRef<number>(0);
+  const lastFlushTime = useRef<number>(0);
 
-    let curveFactor: number;
-    if (v < 0.25) {
-      curveFactor = 0.85 + (v / 0.25) * 0.25;
-    } else if (v < 1.20) {
-      curveFactor = 1.10 + Math.pow((v - 0.25) / 0.95, 1.35) * 1.20;
-    } else {
-      curveFactor = 2.30 + Math.min((v - 1.20) * 1.50, 2.00);
+  const flushMove = () => {
+    const pdx = pendingDx.current;
+    const pdy = pendingDy.current;
+    if (Math.abs(pdx) > 0.05 || Math.abs(pdy) > 0.05) {
+      socketService.move(pdx, pdy);
+      pendingDx.current = 0;
+      pendingDy.current = 0;
+      lastFlushTime.current = Date.now();
     }
+  };
+
+  // Natural 1:1 Precision Curve with Smooth High-Speed Scaling
+  const computeAcceleratedDelta = (rawDx: number, rawDy: number) => {
+    const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+    if (dist < 0.05) return { dx: 0, dy: 0 };
 
     const multiplier = speedRef.current;
+
+    // Direct 1:1 for fine precision aiming (no slow-speed suppression)
+    // Smooth gradual scaling for fast swipes across monitors
+    let factor = 1.0;
+    if (dist > 1.8) {
+      factor = 1.0 + Math.min(Math.pow((dist - 1.8) / 8.0, 1.15) * 1.25, 2.8);
+    }
+
     return {
-      dx: rawDx * curveFactor * multiplier,
-      dy: rawDy * curveFactor * multiplier,
+      dx: rawDx * factor * multiplier,
+      dy: rawDy * factor * multiplier,
     };
   };
 
@@ -113,6 +127,10 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         cancelInertia();
+        pendingDx.current = 0;
+        pendingDy.current = 0;
+        lastFlushTime.current = Date.now();
+
         const now = Date.now();
         const touches = evt.nativeEvent.touches;
         touchCount.current = touches.length;
@@ -144,21 +162,25 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
       onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         const now = Date.now();
-        const dt = now - lastTouchTime.current;
         const touches = evt.nativeEvent.touches;
 
         if (touches.length === 1) {
-          // Single finger cursor glide
+          // Single finger cursor glide with 120Hz micro-accumulator
           const currentX = touches[0].pageX;
           const currentY = touches[0].pageY;
 
           const rawDx = currentX - lastTouchX.current;
           const rawDy = currentY - lastTouchY.current;
 
-          if (Math.abs(rawDx) > 0.1 || Math.abs(rawDy) > 0.1) {
+          if (Math.abs(rawDx) > 0.05 || Math.abs(rawDy) > 0.05) {
             hasMoved.current = true;
-            const { dx, dy } = computeAcceleratedDelta(rawDx, rawDy, dt);
-            socketService.move(dx, dy);
+            const { dx, dy } = computeAcceleratedDelta(rawDx, rawDy);
+            pendingDx.current += dx;
+            pendingDy.current += dy;
+
+            if (now - lastFlushTime.current >= 8) {
+              flushMove();
+            }
           }
 
           lastTouchX.current = currentX;
@@ -189,6 +211,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
       },
 
       onPanResponderRelease: (evt: GestureResponderEvent) => {
+        flushMove();
         const now = Date.now();
         const duration = now - touchStartTime.current;
 
