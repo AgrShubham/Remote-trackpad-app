@@ -1,0 +1,35 @@
+export const Colors = {
+  bg: '#0b0c10',
+  bgDark: '#08080c',
+  card: '#15161e',
+  accent: '#4f8cff',
+  accentGlow: 'rgba(79, 140, 255, 0.35)',
+  accentSoft: 'rgba(79, 140, 255, 0.16)',
+  border: 'rgba(255, 255, 255, 0.08)',
+  borderHighlight: 'rgba(255, 255, 255, 0.15)',
+  textMain: '#f5f5f7',
+  textMuted: '#8b8d9c',
+  success: '#4ade80',
+  error: '#f87171',
+  warning: '#fbbf24',
+
+  // Gamepad Console Tokens
+  gpBg: '#18181a',
+  gpBtnBase: '#525256',
+  gpBtnBorder: '#2c2c2e',
+  gpBtnText: '#18181a',
+  gpBtnActive: '#787880',
+  gpStickOuter: '#242426',
+  gpStickRing: '#333336',
+  gpStickKnob: '#545458',
+  gpTrigger: '#28282c',
+
+  // Mechanical Keyboard Tokens
+  kbPlate: '#cbd0da',
+  kbChassis: '#1e2028',
+  keyBase: '#e8eaee',
+  keyDark: '#b8bcc6',
+  keyText: '#1a1b22',
+  keyActive: '#3b82f6',
+  ledGreen: '#22c55e',
+};
