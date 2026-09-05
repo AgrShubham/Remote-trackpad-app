@@ -271,46 +271,46 @@ graph LR
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
-- Python 3.9 or higher installed on your computer.
-- Both your computer and phone connected to the **same local Wi-Fi network** (or phone hotspot).
+### Option 1: Zero Setup (Windows Standalone Executable)
+No Python or command prompt needed!
+1. Download **[RemoteMouseServer.exe](https://github.com/AgrShubham/Remote-trackpad-app/releases/download/v1.0.0/RemoteMouseServer.exe)** from GitHub Releases.
+2. Double-click to launch (runs in the Windows system tray with a clean status control dashboard).
+3. Connect from your phone via browser or the native **[Android APK](https://github.com/AgrShubham/Remote-trackpad-app/releases/download/v1.0.0/app-release.apk)**!
 
-### 2. Clone the Repository
-```powershell
-git clone https://github.com/AgrShubham/remote_mouse.git
-cd remote_mouse
-```
+---
 
-### 3. Install Dependencies
-```powershell
-pip install Flask Flask-SocketIO pynput
-```
-
-### 4. Start the Server
-```powershell
-python server.py
-```
-The server will print your active LAN IP address:
-```text
- * Running on all addresses (0.0.0.0)
- * Running on http://127.0.0.1:5000
- * Running on http://192.168.x.x:5000
-```
-
-### 5. Connect from your Phone
-1. Open any mobile browser (Chrome, Safari, Edge, etc.).
-2. Navigate to:
-   ```text
-   http://<YOUR_PC_IP>:5000
+### Option 2: Run from Python Source
+1. **Clone the Repository**:
+   ```powershell
+   git clone https://github.com/AgrShubham/Remote-trackpad-app.git
+   cd Remote-trackpad-app
    ```
-3. The interface loads instantly with **`Connected ✔`** status!
+
+2. **Install Server Dependencies**:
+   ```powershell
+   pip install -r server/requirements.txt
+   ```
+
+3. **Start the Server**:
+   - **Dev / Console Server**:
+     ```powershell
+     python server/server.py
+     ```
+   - **System Tray Desktop Application**:
+     ```powershell
+     python server/server_app.py
+     ```
+
+4. **Connect from your Phone**:
+   - **Native Android App**: Install and launch the mobile app from `mobile/`. It will auto-discover your PC via UDP beacon!
+   - **Mobile Web Browser**: Open Chrome or Safari and go to `http://<YOUR_PC_IP>:5000`.
 
 ---
 
 ## 🛠️ Configuration & Settings
 
 - **Sensitivity Slider**: Adjust trackpad sensitivity on mobile from `0.5×` to `3.5×` in real time.
-- **Port**: Default is `5000`. You can change it in [server.py](server.py) by modifying the `port` argument in `socketio.run()`.
+- **Port**: Default is `5000`. You can change it in [server/server.py](server/server.py) by modifying the `port` argument in `socketio.run()`.
 - **Button Remapping**: Long-press any gamepad button for 750ms to rename it and rebind its PC key.
 
 ---

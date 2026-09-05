@@ -1,6 +1,7 @@
 from gevent import monkey
 monkey.patch_all()
 
+import os
 import socket
 import threading
 import json
@@ -16,8 +17,13 @@ from flask_socketio import SocketIO
 from pynput.mouse import Controller as MouseController, Button
 from pynput.keyboard import Controller as KeyboardController, Key
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Explicitly tell Flask where templates and static files are
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 
 mouse = MouseController()
