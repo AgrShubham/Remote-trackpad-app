@@ -7,9 +7,9 @@ import {
   PanResponder,
   GestureResponderEvent,
   PanResponderGestureState,
+  Modal,
 } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { Colors } from '../theme/colors';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { audioService } from '../services/AudioService';
@@ -23,11 +23,12 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   isFullscreen: propIsFullscreen,
   onToggleFullscreen,
 }) => {
-  const [speed, setSpeed] = useState<number>(2.6);
+  const [speed, setSpeed] = useState<number>(1.4);
   const [isDragLocked, setIsDragLocked] = useState<boolean>(false);
   const [leftClickActive, setLeftClickActive] = useState<boolean>(false);
   const [rightClickActive, setRightClickActive] = useState<boolean>(false);
   const [localFullscreen, setLocalFullscreen] = useState<boolean>(false);
+  const [isSensitivityModalOpen, setIsSensitivityModalOpen] = useState<boolean>(false);
 
   const isFullscreen = propIsFullscreen !== undefined ? propIsFullscreen : localFullscreen;
   const toggleFullscreen = () => {
@@ -62,6 +63,37 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   const dragLockRef = useRef<boolean>(isDragLocked);
   dragLockRef.current = isDragLocked;
 
+  // Slider geometry & interactive PanResponder
+  const trackRef = useRef<View>(null);
+  const trackWidthRef = useRef<number>(240);
+  const trackPageXRef = useRef<number>(0);
+
+  const updateSpeedFromPageX = (pageX: number) => {
+    const width = trackWidthRef.current || 240;
+    const x = pageX - trackPageXRef.current;
+    const fraction = Math.max(0, Math.min(1, x / width));
+    // Range 0.5 to 3.5 (span = 3.0)
+    const newSpeed = parseFloat((0.5 + fraction * 3.0).toFixed(1));
+    setSpeed(newSpeed);
+  };
+
+  const sliderPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        updateSpeedFromPageX(evt.nativeEvent.pageX);
+        hapticsService.light();
+      },
+      onPanResponderMove: (evt) => {
+        updateSpeedFromPageX(evt.nativeEvent.pageX);
+      },
+      onPanResponderRelease: () => {
+        hapticsService.light();
+      },
+    })
+  ).current;
+
   const cancelInertia = () => {
     if (inertiaRaf.current !== null) {
       cancelAnimationFrame(inertiaRaf.current);
@@ -84,23 +116,23 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
     inertiaRaf.current = requestAnimationFrame(loop);
   };
 
-  // MacBook Pro Dynamic Velocity Ballistics
+  // Natural Precision Velocity Ballistics
   const computeAcceleratedDelta = (rawDx: number, rawDy: number) => {
     const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
     if (dist < 0.05) return { dx: 0, dy: 0 };
 
     const multiplier = speedRef.current;
 
-    // 1. Micro-aiming (dist < 1.5): Crisp baseline for fine 1px precision
-    // 2. Normal cruise (1.5 <= dist < 6.0): Scales smoothly up to 4.5x
-    // 3. Fast flick (dist >= 6.0): Kinetic multiplier scaling up to 8.5x
+    // 1. Micro-aiming (dist < 1.5): True 1:1 hardware pixel precision (zero jitter/over-acceleration)
+    // 2. Normal cruise (1.5 <= dist < 6.0): Gentle progressive acceleration (1.0 -> 2.2x)
+    // 3. Fast flick (dist >= 6.0): Controlled kinetic boost capped at 3.5x
     let factor: number;
     if (dist < 1.5) {
-      factor = 1.8;
+      factor = 1.0;
     } else if (dist < 6.0) {
-      factor = 1.8 + Math.pow((dist - 1.5) / 4.5, 1.2) * 2.5;
+      factor = 1.0 + Math.pow((dist - 1.5) / 4.5, 1.2) * 1.2;
     } else {
-      factor = 4.3 + Math.min(Math.pow((dist - 6.0) / 6.0, 1.1) * 3.5, 4.2);
+      factor = 2.2 + Math.min(Math.pow((dist - 6.0) / 6.0, 1.1) * 1.3, 1.3);
     }
 
     return {
@@ -146,7 +178,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         }
       },
 
-      onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+      onPanResponderMove: (evt: GestureResponderEvent, _gestureState: PanResponderGestureState) => {
         const now = Date.now();
         const touches = evt.nativeEvent.touches;
 
@@ -191,7 +223,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         }
       },
 
-      onPanResponderRelease: (evt: GestureResponderEvent) => {
+      onPanResponderRelease: (_evt: GestureResponderEvent) => {
         const now = Date.now();
         const duration = now - touchStartTime.current;
 
@@ -225,7 +257,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
     })
   ).current;
 
-  // Integrated Click Strips
+  // Seamless Integrated Click Handlers
   const handleLeftPressIn = () => {
     setLeftClickActive(true);
     socketService.mouseDown('left');
@@ -248,42 +280,29 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
   return (
     <View style={[styles.container, isFullscreen && styles.fullscreenContainer]}>
-      {/* Trackpad Toolbar - Hidden in Fullscreen so ONLY trackpad and buttons are visible */}
+      {/* Top Floating Action Bar (Hidden in Fullscreen) */}
       {!isFullscreen && (
-        <View style={styles.toolbar}>
-          <View style={styles.toolbarLeft}>
-            <Text style={styles.toolbarLabel}>SPEED</Text>
-            <View style={styles.speedControl}>
-              <TouchableOpacity
-                style={styles.speedBtn}
-                onPress={() => setSpeed((s) => Math.max(1.0, parseFloat((s - 0.2).toFixed(1))))}
-                activeOpacity={0.8}
-                focusable={false}
-              >
-                <Text style={styles.speedBtnText}>−</Text>
-              </TouchableOpacity>
+        <View style={styles.topBar}>
+          {/* Floating Sensitivity Pill - Tapping opens real-time scrubber */}
+          <TouchableOpacity
+            style={styles.sensitivityPill}
+            onPress={() => {
+              hapticsService.light();
+              setIsSensitivityModalOpen(true);
+            }}
+            activeOpacity={0.75}
+            focusable={false}
+          >
+            <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </Svg>
+            <Text style={styles.sensitivityPillText}>{speed.toFixed(1)}× Sensitivity</Text>
+            <Svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="#8b8d9c" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M6 9l6 6 6-6" />
+            </Svg>
+          </TouchableOpacity>
 
-              <View style={styles.speedTrack}>
-                <View
-                  style={[
-                    styles.speedFill,
-                    { width: `${Math.min(100, Math.max(0, ((speed - 1.0) / (6.0 - 1.0)) * 100))}%` },
-                  ]}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.speedBtn}
-                onPress={() => setSpeed((s) => Math.min(6.0, parseFloat((s + 0.2).toFixed(1))))}
-                activeOpacity={0.8}
-                focusable={false}
-              >
-                <Text style={styles.speedBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.speedValue}>{speed.toFixed(1)}×</Text>
-          </View>
-
+          {/* Clean Fullscreen Action Pill */}
           <TouchableOpacity
             style={styles.fullscreenBtn}
             onPress={toggleFullscreen}
@@ -298,7 +317,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         </View>
       )}
 
-      {/* Monolithic Glass Trackpad Frame - 100% Matching templates/index.html lines 1534-1562 */}
+      {/* Monolithic Glass Trackpad Surface */}
       <View style={[styles.macTrackpadFrame, isFullscreen && styles.macTrackpadFrameFullscreen]}>
         {/* Floating Exit Button in Fullscreen Mode */}
         {isFullscreen && (
@@ -315,13 +334,9 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           </TouchableOpacity>
         )}
 
+        {/* Expansive Touch Motion Zone */}
         <View style={styles.motionZone} {...panResponder.panHandlers}>
-          {/* Dashed Center Crosshair (templates/index.html line 1536) */}
-          <View style={styles.centerMark} pointerEvents="none">
-            <View style={styles.centerMarkDot} />
-          </View>
-
-          {/* Dragging Pill Indicator (templates/index.html line 1537) */}
+          {/* Dragging Pill Indicator */}
           {isDragLocked && (
             <View style={styles.dragPill} pointerEvents="none">
               <Text style={styles.dragPillText}>DRAGGING</Text>
@@ -329,21 +344,19 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           )}
         </View>
 
-        {/* Integrated Bottom Click Bar (templates/index.html lines 1541-1561) */}
-        <View style={[styles.clickStrip, isFullscreen && styles.clickStripFullscreen]}>
-          <View style={styles.clickDivider} pointerEvents="none" />
-
-          {/* Left Click Zone with exact Mouse SVG */}
+        {/* Seamless Laptop-Style Bottom Click Zones (Integrated into surface) */}
+        <View style={[styles.seamlessClickBar, isFullscreen && styles.seamlessClickBarFullscreen]}>
+          {/* Left Click Zone */}
           <TouchableOpacity
-            style={[styles.clickZone, leftClickActive && styles.clickZoneActive]}
+            style={[styles.seamlessClickZone, leftClickActive && styles.seamlessClickActive]}
             onPressIn={handleLeftPressIn}
             onPressOut={handleLeftPressOut}
             activeOpacity={0.92}
             focusable={false}
           >
             <Svg
-              width={16}
-              height={16}
+              width={15}
+              height={15}
               viewBox="0 0 24 24"
               fill="none"
               stroke={leftClickActive ? '#ffffff' : '#60a5fa'}
@@ -355,21 +368,24 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
               <Path d="M6 9h6" />
               <Path d="M12 3v6" />
             </Svg>
-            <Text style={[styles.clickZoneText, leftClickActive && styles.clickZoneTextActive]}>
+            <Text style={[styles.seamlessClickText, leftClickActive && styles.seamlessClickTextActive]}>
               Left Click
             </Text>
           </TouchableOpacity>
 
-          {/* Right Click Zone with exact Mouse SVG */}
+          {/* Whisper-Thin Hairline Divider */}
+          <View style={styles.seamlessDivider} pointerEvents="none" />
+
+          {/* Right Click Zone */}
           <TouchableOpacity
-            style={[styles.clickZone, rightClickActive && styles.clickZoneActive]}
+            style={[styles.seamlessClickZone, rightClickActive && styles.seamlessClickActive]}
             onPress={handleRightPress}
             activeOpacity={0.92}
             focusable={false}
           >
             <Svg
-              width={16}
-              height={16}
+              width={15}
+              height={15}
               viewBox="0 0 24 24"
               fill="none"
               stroke={rightClickActive ? '#ffffff' : '#60a5fa'}
@@ -381,23 +397,125 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
               <Path d="M12 9h6" />
               <Path d="M12 3v6" />
             </Svg>
-            <Text style={[styles.clickZoneText, rightClickActive && styles.clickZoneTextActive]}>
+            <Text style={[styles.seamlessClickText, rightClickActive && styles.seamlessClickTextActive]}>
               Right Click
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Gesture Guide Footer - 100% Matching templates/index.html lines 1565-1571 */}
-      {!isFullscreen && (
-        <View style={styles.guideBar}>
-          <Text style={styles.guideText}>1-Finger: Move / Tap</Text>
-          <Text style={styles.guideSep}>•</Text>
-          <Text style={styles.guideText}>2-Finger: Scroll / Right-Click</Text>
-          <Text style={styles.guideSep}>•</Text>
-          <Text style={styles.guideText}>Bottom: Click Zones</Text>
-        </View>
-      )}
+      {/* Expandable Sensitivity Scrubber Modal */}
+      <Modal
+        visible={isSensitivityModalOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsSensitivityModalOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsSensitivityModalOpen(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalCard}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </Svg>
+                <Text style={styles.modalTitle}>Cursor Sensitivity</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setIsSensitivityModalOpen(false)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Value Display */}
+            <View style={styles.sliderValueRow}>
+              <Text style={styles.sliderValueNumber}>{speed.toFixed(1)}×</Text>
+              <View style={styles.modeBadge}>
+                <Text style={styles.modeBadgeText}>
+                  {speed <= 1.0 ? 'Precision' : speed <= 1.6 ? 'Balanced' : speed <= 2.4 ? 'Fast' : 'Ultra Fast'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Draggable Scrubber Slider */}
+            <View style={styles.sliderContainer} {...sliderPanResponder.panHandlers}>
+              <View
+                ref={trackRef}
+                style={styles.sliderTrack}
+                onLayout={() => {
+                  trackRef.current?.measure((_x, _y, width, _height, pageX, _pageY) => {
+                    if (width > 0) {
+                      trackWidthRef.current = width;
+                      trackPageXRef.current = pageX;
+                    }
+                  });
+                }}
+              >
+                {/* Active Fill */}
+                <View
+                  style={[
+                    styles.sliderFill,
+                    { width: `${Math.min(100, Math.max(0, ((speed - 0.5) / 3.0) * 100))}%` },
+                  ]}
+                />
+                {/* Glowing Knob Thumb */}
+                <View
+                  style={[
+                    styles.sliderThumb,
+                    { left: `${Math.min(100, Math.max(0, ((speed - 0.5) / 3.0) * 100))}%` },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* Min / Max Labels */}
+            <View style={styles.sliderRangeLabels}>
+              <Text style={styles.rangeText}>0.5×</Text>
+              <Text style={styles.rangeHint}>Drag to adjust smoothly</Text>
+              <Text style={styles.rangeText}>3.5×</Text>
+            </View>
+
+            {/* Quick Presets */}
+            <View style={styles.presetsGrid}>
+              {[
+                { label: 'Slow', val: 1.0 },
+                { label: 'Normal', val: 1.4 },
+                { label: 'Fast', val: 2.0 },
+                { label: 'Turbo', val: 3.0 },
+              ].map((p) => {
+                const isActive = Math.abs(speed - p.val) < 0.05;
+                return (
+                  <TouchableOpacity
+                    key={p.label}
+                    style={[styles.presetPill, isActive && styles.presetPillActive]}
+                    onPress={() => {
+                      setSpeed(p.val);
+                      hapticsService.light();
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.presetPillText, isActive && styles.presetPillTextActive]}>
+                      {p.val.toFixed(1)}× {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -414,114 +532,58 @@ const styles = StyleSheet.create({
   fullscreenContainer: {
     padding: 0,
   },
-  // Toolbar styles matching .trackpad-toolbar
-  toolbar: {
+
+  // Floating Top Action Bar
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(22, 23, 31, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
     marginBottom: 6,
     flexShrink: 0,
   },
-  toolbarFullscreen: {
-    borderRadius: 0,
-    borderWidth: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: 'rgba(14, 15, 21, 0.96)',
-    marginBottom: 0,
-  },
-  toolbarLeft: {
+  sensitivityPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
-    minWidth: 0,
-  },
-  toolbarLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#8b8d9c',
-    textTransform: 'uppercase',
-    letterSpacing: 0.55,
-  },
-  speedControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flex: 1,
-    maxWidth: 130,
-  },
-  speedBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
   },
-  speedBtnText: {
-    color: '#f5f5f7',
-    fontSize: 14,
+  sensitivityPillText: {
+    color: '#e5e5ea',
+    fontSize: 12,
     fontWeight: '600',
-    lineHeight: 16,
-  },
-  speedTrack: {
-    flex: 1,
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  speedFill: {
-    height: '100%',
-    backgroundColor: '#4f8cff',
-    borderRadius: 2,
-  },
-  speedValue: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#f5f5f7',
-    minWidth: 28,
+    letterSpacing: 0.2,
   },
   fullscreenBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
-  },
-  fullscreenBtnActive: {
-    backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    borderColor: 'rgba(52, 211, 153, 0.4)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   fullscreenBtnText: {
     color: '#e5e5ea',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
-  fullscreenBtnTextActive: {
-    color: '#34d399',
-  },
 
-  // Monolithic Trackpad Glass Surface matching .mac-trackpad-frame
+  // Monolithic Trackpad Glass Surface
   macTrackpadFrame: {
     flex: 1,
     minHeight: 0,
     backgroundColor: '#13141b',
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     overflow: 'hidden',
@@ -543,26 +605,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  centerMark: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    opacity: 0.5,
-  },
-  centerMarkDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
   dragPill: {
     position: 'absolute',
-    top: 12,
+    top: 14,
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 999,
@@ -603,89 +648,207 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Bottom Click Bar matching .trackpad-click-strip
-  clickStrip: {
+  // Seamless Monolithic Click Zones
+  seamlessClickBar: {
+    height: 60,
+    minHeight: 60,
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.015)',
+  },
+  seamlessClickBarFullscreen: {
     height: 72,
     minHeight: 72,
-    flexShrink: 0,
-    position: 'relative',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.12)',
-    backgroundColor: '#161821',
+    paddingBottom: 6,
+    backgroundColor: '#0e0f14',
   },
-  clickStripFullscreen: {
-    height: 80,
-    minHeight: 80,
-    paddingBottom: 8,
-    backgroundColor: '#12131a',
-  },
-  clickDivider: {
-    position: 'absolute',
-    top: '14%',
-    bottom: '14%',
-    left: '50%',
-    width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    zIndex: 2,
-  },
-  clickZone: {
+  seamlessClickZone: {
     flex: 1,
-    height: 54,
-    marginHorizontal: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    elevation: 3,
+    backgroundColor: 'transparent',
   },
-  clickZoneActive: {
-    backgroundColor: 'rgba(79, 140, 255, 0.28)',
-    borderColor: 'rgba(79, 140, 255, 0.85)',
-    shadowColor: '#4f8cff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 4,
-    transform: [{ scale: 0.98 }],
+  seamlessClickActive: {
+    backgroundColor: 'rgba(79, 140, 255, 0.16)',
   },
-  clickZoneText: {
-    fontSize: 14,
+  seamlessDivider: {
+    width: 1,
+    height: '60%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  seamlessClickText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#8b8d9c',
+    letterSpacing: 0.3,
   },
-  clickZoneTextActive: {
-    color: '#ffffff',
+  seamlessClickTextActive: {
+    color: '#60a5fa',
+    fontWeight: '700',
   },
 
-  // Guide Bar matching .trackpad-guide-bar
-  guideBar: {
+  // Sensitivity Scrubber Modal Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#161722',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    padding: 20,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.7,
+    shadowRadius: 30,
+  },
+  modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.2,
+  },
+  modalCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 5,
+  },
+  modalCloseText: {
+    color: '#9ca3af',
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 15,
+  },
+
+  sliderValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 14,
+  },
+  sliderValueNumber: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#60a5fa',
+    letterSpacing: -0.5,
+  },
+  modeBadge: {
+    paddingVertical: 3,
     paddingHorizontal: 8,
-    backgroundColor: 'rgba(18, 19, 26, 0.85)',
+    borderRadius: 6,
+    backgroundColor: 'rgba(96, 165, 250, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.3)',
+  },
+  modeBadgeText: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+
+  // Interactive Slider Hit Area
+  sliderContainer: {
+    height: 40,
+    justifyContent: 'center',
+  },
+  sliderTrack: {
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 4,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  sliderFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+    borderRadius: 4,
+  },
+  sliderThumb: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#ffffff',
+    borderWidth: 3,
+    borderColor: '#3b82f6',
+    marginLeft: -11,
+    elevation: 4,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.6,
+    shadowRadius: 5,
+  },
+
+  sliderRangeLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  rangeText: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  rangeHint: {
+    fontSize: 10.5,
+    color: '#4b5563',
+  },
+
+  presetsGrid: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'space-between',
+  },
+  presetPill: {
+    flex: 1,
+    paddingVertical: 8,
     borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    marginTop: 6,
-    flexShrink: 0,
+    alignItems: 'center',
   },
-  guideText: {
-    fontSize: 10.5,
-    fontWeight: '500',
-    color: '#9da0b5',
+  presetPillActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    borderColor: '#3b82f6',
   },
-  guideSep: {
-    marginHorizontal: 6,
-    color: '#9da0b5',
-    opacity: 0.35,
+  presetPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  presetPillTextActive: {
+    color: '#60a5fa',
+    fontWeight: '700',
   },
 });
