@@ -154,6 +154,16 @@ class SocketService {
     this.socket.emit('key', { name, action });
   }
 
+  public shortcut(keys: string[]) {
+    if (!this.socket || !this.socket.connected) return;
+    for (const k of keys) {
+      this.key(k, 'press');
+    }
+    for (let i = keys.length - 1; i >= 0; i--) {
+      this.key(keys[i], 'release');
+    }
+  }
+
   public text(str: string) {
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('text', { text: str });

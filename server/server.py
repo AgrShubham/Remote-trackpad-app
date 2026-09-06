@@ -48,6 +48,7 @@ KEY_MAP = {
     "alt_r": Key.alt_r,
     "caps_lock": Key.caps_lock,
     "cmd": Key.cmd,
+    "win": Key.cmd,
     "up": Key.up,
     "down": Key.down,
     "left": Key.left,
