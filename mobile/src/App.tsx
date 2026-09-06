@@ -10,7 +10,9 @@ import {
 import { Colors } from './theme/colors';
 import { socketService, ConnectionStatus } from './services/SocketService';
 import { hapticsService } from './services/HapticsService';
+import { settingsService, ACCENT_PALETTES, AppSettings } from './services/SettingsService';
 import { ConnectionModal } from './components/ConnectionModal';
+import { SettingsModal } from './components/SettingsModal';
 import { TrackpadScreen } from './screens/TrackpadScreen';
 import { GamepadScreen } from './screens/GamepadScreen';
 import { KeyboardScreen } from './screens/KeyboardScreen';
@@ -21,19 +23,31 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [latency, setLatency] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
 
   const toggleFullscreen = () => {
     setIsFullscreen((prev) => !prev);
   };
 
   useEffect(() => {
-    const unsub = socketService.subscribe((status, lat) => {
+    const unsubSocket = socketService.subscribe((status, lat) => {
       setConnectionStatus(status);
       setLatency(lat);
     });
-    return unsub;
+
+    const unsubSettings = settingsService.subscribe((newSettings) => {
+      setSettings(newSettings);
+    });
+
+    return () => {
+      unsubSocket();
+      unsubSettings();
+    };
   }, []);
+
+  const currentAccent = ACCENT_PALETTES[settings.accentTheme] || ACCENT_PALETTES.blue;
 
   return (
     <SafeAreaView style={[styles.container, isFullscreen && styles.containerFullscreen]}>
@@ -41,30 +55,49 @@ export default function App() {
 
       {/* Header - Hidden in Fullscreen */}
       {!isFullscreen && (
-        <TouchableOpacity
-          style={styles.header}
-          onPress={() => setModalVisible(true)}
-          activeOpacity={0.8}
-          focusable={false}
-        >
-          <View style={styles.appTitle}>
-            <View style={styles.logoDot} />
-            <Text style={styles.appTitleText}>Remote Trackpad Pro</Text>
-          </View>
-          <Text
-            style={[
-              styles.statusText,
-              connectionStatus === 'connected' && styles.statusConnected,
-              connectionStatus === 'connecting' && styles.statusConnecting,
-            ]}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.headerLeftAndCenter}
+            onPress={() => {
+              hapticsService.light();
+              setModalVisible(true);
+            }}
+            activeOpacity={0.8}
+            focusable={false}
           >
-            {connectionStatus === 'connected'
-              ? `Connected ✔${latency > 0 ? ` (${latency}ms)` : ''}`
-              : connectionStatus === 'connecting'
-              ? 'Connecting...'
-              : 'Disconnected ✖ (Tap to Connect)'}
-          </Text>
-        </TouchableOpacity>
+            <View style={styles.appTitle}>
+              <View style={[styles.logoDot, { backgroundColor: currentAccent.primary }]} />
+              <Text style={styles.appTitleText}>Remote Trackpad Pro</Text>
+            </View>
+            <Text
+              style={[
+                styles.statusText,
+                connectionStatus === 'connected' && styles.statusConnected,
+                connectionStatus === 'connecting' && styles.statusConnecting,
+              ]}
+              numberOfLines={1}
+            >
+              {connectionStatus === 'connected'
+                ? `Connected ✔${latency > 0 ? ` (${latency}ms)` : ''}`
+                : connectionStatus === 'connecting'
+                ? 'Connecting...'
+                : 'Disconnected ✖ (Tap to Connect)'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Settings Icon Button */}
+          <TouchableOpacity
+            style={styles.settingsHeaderBtn}
+            onPress={() => {
+              hapticsService.light();
+              setSettingsModalVisible(true);
+            }}
+            activeOpacity={0.8}
+            focusable={false}
+          >
+            <Text style={styles.settingsHeaderIcon}>⚙️</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Tabs - Hidden in Fullscreen */}
@@ -83,7 +116,13 @@ export default function App() {
             return (
               <TouchableOpacity
                 key={tab}
-                style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+                style={[
+                  styles.tabBtn,
+                  isActive && {
+                    backgroundColor: currentAccent.bgSoft,
+                    borderColor: currentAccent.border,
+                  },
+                ]}
                 onPress={() => {
                   setActiveTab(tab);
                   hapticsService.light();
@@ -91,7 +130,15 @@ export default function App() {
                 activeOpacity={0.88}
                 focusable={false}
               >
-                <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>
+                <Text
+                  style={[
+                    styles.tabBtnText,
+                    isActive && {
+                      color: '#ffffff',
+                      fontWeight: '700',
+                    },
+                  ]}
+                >
                   {label}
                 </Text>
               </TouchableOpacity>
@@ -133,6 +180,12 @@ export default function App() {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
       />
+
+      {/* Settings & Preferences Modal */}
+      <SettingsModal
+        visible={settingsModalVisible}
+        onClose={() => setSettingsModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -143,10 +196,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b0c10',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#161720',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
@@ -156,6 +210,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.6,
     shadowRadius: 20,
     zIndex: 10,
+  },
+  headerLeftAndCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsHeaderBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  settingsHeaderIcon: {
+    fontSize: 16,
   },
   appTitle: {
     flexDirection: 'row',
@@ -167,15 +240,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#4f8cff',
-    shadowColor: '#4f8cff',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 10,
     elevation: 4,
   },
   appTitleText: {
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 15,
     letterSpacing: 0.3,
     color: '#f5f5f7',
@@ -213,24 +284,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tabBtnActive: {
-    backgroundColor: 'rgba(79, 140, 255, 0.16)',
-    borderColor: 'rgba(79, 140, 255, 0.4)',
-    shadowColor: '#4f8cff',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 2,
-  },
   tabBtnText: {
     color: '#8b8d9c',
     fontSize: 12,
     fontWeight: '500',
     textAlign: 'center',
-  },
-  tabBtnTextActive: {
-    color: '#f5f5f7',
-    fontWeight: '600',
   },
   content: {
     flex: 1,

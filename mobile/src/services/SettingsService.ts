@@ -1,0 +1,149 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import KeepAwake from 'react-native-keep-awake';
+
+export type HapticIntensity = 'subtle' | 'medium' | 'strong';
+export type AccentTheme = 'blue' | 'emerald' | 'purple' | 'amber' | 'crimson';
+
+export interface AppSettings {
+  keepAwake: boolean;
+  hapticsEnabled: boolean;
+  hapticsIntensity: HapticIntensity;
+  accentTheme: AccentTheme;
+  preferUdp: boolean;
+  autoReconnect: boolean;
+}
+
+const SETTINGS_STORAGE_KEY = '@remote_mouse_settings_v1';
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  keepAwake: true,
+  hapticsEnabled: true,
+  hapticsIntensity: 'medium',
+  accentTheme: 'blue',
+  preferUdp: true,
+  autoReconnect: true,
+};
+
+export const ACCENT_PALETTES: Record<
+  AccentTheme,
+  { name: string; primary: string; glow: string; border: string; bgSoft: string }
+> = {
+  blue: {
+    name: 'Cobalt Blue',
+    primary: '#3b82f6',
+    glow: 'rgba(59, 130, 246, 0.4)',
+    border: 'rgba(59, 130, 246, 0.65)',
+    bgSoft: 'rgba(59, 130, 246, 0.18)',
+  },
+  emerald: {
+    name: 'Cyber Emerald',
+    primary: '#10b981',
+    glow: 'rgba(16, 185, 129, 0.4)',
+    border: 'rgba(16, 185, 129, 0.65)',
+    bgSoft: 'rgba(16, 185, 129, 0.18)',
+  },
+  purple: {
+    name: 'Neon Violet',
+    primary: '#8b5cf6',
+    glow: 'rgba(139, 92, 246, 0.4)',
+    border: 'rgba(139, 92, 246, 0.65)',
+    bgSoft: 'rgba(139, 92, 246, 0.18)',
+  },
+  amber: {
+    name: 'Sunset Amber',
+    primary: '#f59e0b',
+    glow: 'rgba(245, 158, 11, 0.4)',
+    border: 'rgba(245, 158, 11, 0.65)',
+    bgSoft: 'rgba(245, 158, 11, 0.18)',
+  },
+  crimson: {
+    name: 'Crimson Red',
+    primary: '#ef4444',
+    glow: 'rgba(239, 68, 68, 0.4)',
+    border: 'rgba(239, 68, 68, 0.65)',
+    bgSoft: 'rgba(239, 68, 68, 0.18)',
+  },
+};
+
+type SettingsListener = (settings: AppSettings) => void;
+
+class SettingsService {
+  private settings: AppSettings = { ...DEFAULT_SETTINGS };
+  private listeners: Set<SettingsListener> = new Set();
+  private isLoaded: boolean = false;
+
+  constructor() {
+    this.init();
+  }
+
+  private async init() {
+    try {
+      const stored = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (stored) {
+        this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      }
+    } catch (e) {
+      console.warn('Failed to load settings:', e);
+    } finally {
+      this.isLoaded = true;
+      this.applyKeepAwake();
+      this.notify();
+    }
+  }
+
+  public getSettings(): AppSettings {
+    return { ...this.settings };
+  }
+
+  public subscribe(listener: SettingsListener): () => void {
+    this.listeners.add(listener);
+    if (this.isLoaded) {
+      listener({ ...this.settings });
+    }
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify() {
+    this.listeners.forEach((listener) => listener({ ...this.settings }));
+  }
+
+  public async updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
+    this.settings[key] = value;
+    if (key === 'keepAwake') {
+      this.applyKeepAwake();
+    }
+    this.notify();
+
+    try {
+      await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(this.settings));
+    } catch (e) {
+      console.warn('Failed to persist setting:', e);
+    }
+  }
+
+  public async resetDefaults() {
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.applyKeepAwake();
+    this.notify();
+
+    try {
+      await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(this.settings));
+    } catch (e) {
+      console.warn('Failed to reset settings:', e);
+    }
+  }
+
+  private applyKeepAwake() {
+    try {
+      if (this.settings.keepAwake) {
+        KeepAwake.activate();
+      } else {
+        KeepAwake.deactivate();
+      }
+    } catch (e) {
+      // Ignore if unsupported
+    }
+  }
+}
+
+export const settingsService = new SettingsService();
