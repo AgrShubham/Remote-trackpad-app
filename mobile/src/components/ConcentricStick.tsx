@@ -15,6 +15,8 @@ interface ConcentricStickProps {
   label: string;
   isRightStick?: boolean;
   size?: number;
+  deadzone?: number;
+  sensitivity?: number;
   onStickClick?: () => void;
 }
 
@@ -22,6 +24,8 @@ export const ConcentricStick: React.FC<ConcentricStickProps> = ({
   label,
   isRightStick = false,
   size = 130,
+  deadzone = 0.12,
+  sensitivity = 1.0,
   onStickClick,
 }) => {
   const [isSprinting, setIsSprinting] = useState(false);
@@ -35,7 +39,7 @@ export const ConcentricStick: React.FC<ConcentricStickProps> = ({
   const maxDistance = radius - knobRadius;
 
   const evaluateOctant = (normX: number, normY: number, r: number): string[] => {
-    if (r < 0.18) return [];
+    if (r < deadzone) return [];
 
     const theta = Math.atan2(normY, normX);
     const PI = Math.PI;
@@ -123,7 +127,7 @@ export const ConcentricStick: React.FC<ConcentricStickProps> = ({
 
         if (isRightStick) {
           // Right stick can send camera aim deltas
-          socketService.move(normX * 8, normY * 8);
+          socketService.move(normX * 8 * sensitivity, normY * 8 * sensitivity);
         } else {
           const keys = evaluateOctant(normX, normY, normR);
           syncKeys(keys);
@@ -160,7 +164,7 @@ export const ConcentricStick: React.FC<ConcentricStickProps> = ({
       <View
         style={[
           styles.deadzoneRing,
-          { width: size * 0.36, height: size * 0.36, borderRadius: (size * 0.36) / 2 },
+          { width: size * deadzone * 2, height: size * deadzone * 2, borderRadius: (size * deadzone * 2) / 2 },
         ]}
       />
 

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Colors } from './theme/colors';
 import { socketService, ConnectionStatus } from './services/SocketService';
+import { hapticsService } from './services/HapticsService';
 import { ConnectionModal } from './components/ConnectionModal';
 import { TrackpadScreen } from './screens/TrackpadScreen';
 import { GamepadScreen } from './screens/GamepadScreen';
@@ -83,7 +84,10 @@ export default function App() {
               <TouchableOpacity
                 key={tab}
                 style={[styles.tabBtn, isActive && styles.tabBtnActive]}
-                onPress={() => setActiveTab(tab)}
+                onPress={() => {
+                  setActiveTab(tab);
+                  hapticsService.light();
+                }}
                 activeOpacity={0.88}
                 focusable={false}
               >
