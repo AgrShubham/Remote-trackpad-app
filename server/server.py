@@ -142,8 +142,8 @@ _desktop_attached = threading.local()
 def ensure_desktop():
     """
     Ensure the current thread/greenlet is attached to the active interactive
-    desktop (WinSta0\\Default) so user32.mouse_event / SendInput has permission to inject input.
-    Cached per-thread to eliminate repeated kernel handle opens/closes.
+    desktop (WinSta0\Default) so user32.mouse_event / SendInput has permission to inject input.
+    Cached per-thread to eliminate repeated kernel handle opens.
     """
     if getattr(_desktop_attached, "attached", False):
         return
@@ -152,10 +152,11 @@ def ensure_desktop():
             hdesk = user32.OpenInputDesktop(0, False, 0x01FF)
             if hdesk:
                 user32.SetThreadDesktop(hdesk)
-                user32.CloseDesktop(hdesk)
                 _desktop_attached.attached = True
+                _desktop_attached.hdesk = hdesk
         except Exception:
             pass
+
 
 
 def native_mouse_move(dx, dy):

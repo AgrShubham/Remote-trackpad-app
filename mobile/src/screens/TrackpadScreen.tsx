@@ -23,7 +23,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   isFullscreen: propIsFullscreen,
   onToggleFullscreen,
 }) => {
-  const [speed, setSpeed] = useState<number>(1.5);
+  const [speed, setSpeed] = useState<number>(2.6);
   const [isDragLocked, setIsDragLocked] = useState<boolean>(false);
   const [leftClickActive, setLeftClickActive] = useState<boolean>(false);
   const [rightClickActive, setRightClickActive] = useState<boolean>(false);
@@ -84,34 +84,23 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
     inertiaRaf.current = requestAnimationFrame(loop);
   };
 
-  // 120Hz Micro-Accumulator to eliminate JS thread congestion and radio buffer lag
-  const pendingDx = useRef<number>(0);
-  const pendingDy = useRef<number>(0);
-  const lastFlushTime = useRef<number>(0);
-
-  const flushMove = () => {
-    const pdx = pendingDx.current;
-    const pdy = pendingDy.current;
-    if (Math.abs(pdx) > 0.05 || Math.abs(pdy) > 0.05) {
-      socketService.move(pdx, pdy);
-      pendingDx.current = 0;
-      pendingDy.current = 0;
-      lastFlushTime.current = Date.now();
-    }
-  };
-
-  // Natural 1:1 Precision Curve with Smooth High-Speed Scaling
+  // MacBook Pro Dynamic Velocity Ballistics
   const computeAcceleratedDelta = (rawDx: number, rawDy: number) => {
     const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
     if (dist < 0.05) return { dx: 0, dy: 0 };
 
     const multiplier = speedRef.current;
 
-    // Direct 1:1 for fine precision aiming (no slow-speed suppression)
-    // Smooth gradual scaling for fast swipes across monitors
-    let factor = 1.0;
-    if (dist > 1.8) {
-      factor = 1.0 + Math.min(Math.pow((dist - 1.8) / 8.0, 1.15) * 1.25, 2.8);
+    // 1. Micro-aiming (dist < 1.5): Crisp baseline for fine 1px precision
+    // 2. Normal cruise (1.5 <= dist < 6.0): Scales smoothly up to 4.5x
+    // 3. Fast flick (dist >= 6.0): Kinetic multiplier scaling up to 8.5x
+    let factor: number;
+    if (dist < 1.5) {
+      factor = 1.8;
+    } else if (dist < 6.0) {
+      factor = 1.8 + Math.pow((dist - 1.5) / 4.5, 1.2) * 2.5;
+    } else {
+      factor = 4.3 + Math.min(Math.pow((dist - 6.0) / 6.0, 1.1) * 3.5, 4.2);
     }
 
     return {
@@ -127,9 +116,6 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         cancelInertia();
-        pendingDx.current = 0;
-        pendingDy.current = 0;
-        lastFlushTime.current = Date.now();
 
         const now = Date.now();
         const touches = evt.nativeEvent.touches;
@@ -165,7 +151,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         const touches = evt.nativeEvent.touches;
 
         if (touches.length === 1) {
-          // Single finger cursor glide with 120Hz micro-accumulator
+          // Single finger cursor glide with zero-wait direct dispatch
           const currentX = touches[0].pageX;
           const currentY = touches[0].pageY;
 
@@ -175,12 +161,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           if (Math.abs(rawDx) > 0.05 || Math.abs(rawDy) > 0.05) {
             hasMoved.current = true;
             const { dx, dy } = computeAcceleratedDelta(rawDx, rawDy);
-            pendingDx.current += dx;
-            pendingDy.current += dy;
-
-            if (now - lastFlushTime.current >= 8) {
-              flushMove();
-            }
+            socketService.move(dx, dy);
           }
 
           lastTouchX.current = currentX;
@@ -195,7 +176,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           const rawDy = avgY - lastTouchY.current;
           const rawDx = avgX - lastTouchX.current;
 
-          const scrollFactor = 0.75 * speedRef.current;
+          const scrollFactor = 0.85 * speedRef.current;
           const scrollDx = rawDx * scrollFactor;
           const scrollDy = rawDy * scrollFactor;
 
@@ -211,7 +192,6 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
       },
 
       onPanResponderRelease: (evt: GestureResponderEvent) => {
-        flushMove();
         const now = Date.now();
         const duration = now - touchStartTime.current;
 
@@ -276,7 +256,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
             <View style={styles.speedControl}>
               <TouchableOpacity
                 style={styles.speedBtn}
-                onPress={() => setSpeed((s) => Math.max(0.5, parseFloat((s - 0.2).toFixed(1))))}
+                onPress={() => setSpeed((s) => Math.max(1.0, parseFloat((s - 0.2).toFixed(1))))}
                 activeOpacity={0.8}
                 focusable={false}
               >
@@ -287,14 +267,14 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
                 <View
                   style={[
                     styles.speedFill,
-                    { width: `${Math.min(100, Math.max(0, ((speed - 0.5) / (3.5 - 0.5)) * 100))}%` },
+                    { width: `${Math.min(100, Math.max(0, ((speed - 1.0) / (6.0 - 1.0)) * 100))}%` },
                   ]}
                 />
               </View>
 
               <TouchableOpacity
                 style={styles.speedBtn}
-                onPress={() => setSpeed((s) => Math.min(3.5, parseFloat((s + 0.2).toFixed(1))))}
+                onPress={() => setSpeed((s) => Math.min(6.0, parseFloat((s + 0.2).toFixed(1))))}
                 activeOpacity={0.8}
                 focusable={false}
               >
