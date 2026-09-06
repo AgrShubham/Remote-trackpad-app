@@ -650,14 +650,14 @@ def print_startup_banner(lan_ip, port=5000, udp_port=5002):
     print("=" * 62 + "\n")
 
 
-if __name__ == "__main__":
+def start_server_worker(port=5000, udp_beacon_port=5001, udp_input_port=5002):
     lan_ip = get_lan_ip()
-    print_startup_banner(lan_ip, port=5000, udp_port=5002)
+    print_startup_banner(lan_ip, port=port, udp_port=udp_input_port)
 
     # 1. Start UDP Discovery Beacon in background daemon thread
     beacon_thread = threading.Thread(
         target=run_udp_discovery_beacon,
-        args=(lan_ip, 5000, 5001, 5002),
+        args=(lan_ip, port, udp_beacon_port, udp_input_port),
         daemon=True
     )
     beacon_thread.start()
@@ -665,10 +665,14 @@ if __name__ == "__main__":
     # 2. Start Ultra-Low Latency UDP Motion Engine in background daemon thread
     udp_thread = threading.Thread(
         target=run_udp_input_server,
-        args=(5002,),
+        args=(udp_input_port,),
         daemon=True
     )
     udp_thread.start()
 
     # 3. Start Gevent WebSocket / HTTP Server
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+
+
+if __name__ == "__main__":
+    start_server_worker()
