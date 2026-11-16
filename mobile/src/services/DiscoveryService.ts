@@ -38,16 +38,21 @@ class DiscoveryService {
         try {
           const text = msg.toString('utf8');
           const data = JSON.parse(text);
-          if (data.app === 'RemoteTrackpadPro' && data.ip) {
-            const hostKey = `${data.ip}:${data.port || 5000}`;
-            this.hosts.set(hostKey, {
-              name: data.name || rinfo.address,
-              ip: data.ip,
-              port: data.port || 5000,
-              udpPort: data.udp_port || 5002,
-              lastSeen: Date.now(),
-            });
-            this.notify();
+          if (data.app === 'RemoteTrackpadPro') {
+            // Prefer rinfo.address as the actual interface IP the packet arrived from
+            const hostIp = (rinfo && rinfo.address) ? rinfo.address : data.ip;
+            if (hostIp) {
+              const hostPort = data.port || 5000;
+              const hostKey = `${hostIp}:${hostPort}`;
+              this.hosts.set(hostKey, {
+                name: data.name || hostIp,
+                ip: hostIp,
+                port: hostPort,
+                udpPort: data.udp_port || 5002,
+                lastSeen: Date.now(),
+              });
+              this.notify();
+            }
           }
         } catch (e) {
           // Ignore non-json or malformed datagrams
@@ -77,6 +82,13 @@ class DiscoveryService {
     } catch (e) {
       console.warn('Could not initialize UDP discovery socket:', e);
     }
+  }
+
+  public rescan(port: number = 5001) {
+    this.stopListening();
+    this.hosts.clear();
+    this.notify();
+    this.startListening(port);
   }
 
   public stopListening() {

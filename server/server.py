@@ -143,7 +143,7 @@ _desktop_attached = threading.local()
 def ensure_desktop():
     """
     Ensure the current thread/greenlet is attached to the active interactive
-    desktop (WinSta0\Default) so user32.mouse_event / SendInput has permission to inject input.
+    desktop (r"WinSta0\Default") so user32.mouse_event / SendInput has permission to inject input.
     Cached per-thread to eliminate repeated kernel handle opens.
     """
     if getattr(_desktop_attached, "attached", False):
@@ -579,46 +579,67 @@ def handle_gamepad_release_all():
 
 
 def get_lan_ip():
-    """Detect local Wi-Fi / LAN IP address."""
+    """
+    Detect local Wi-Fi / LAN IP address with offline fallback.
+    Works on home Wi-Fi, office LAN, phone hotspots, and offline ad-hoc networks.
+    """
+    # 1. Quick probe to outbound socket (handles internet-connected networks)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Doesn't have to be reachable; just selects the outbound interface
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
+        if ip and not ip.startswith("127."):
+            return ip
     except Exception:
-        ip = "127.0.0.1"
+        pass
     finally:
         s.close()
-    return ip
+
+    # 2. Hostname enumeration fallback (works on offline LANs and hotspots)
+    try:
+        hostname = socket.gethostname()
+        _, _, ips = socket.gethostbyname_ex(hostname)
+        for ip in ips:
+            if not ip.startswith("127.") and not ip.startswith("169.254."):
+                return ip
+    except Exception:
+        pass
+
+    return "127.0.0.1"
 
 
-def run_udp_discovery_beacon(lan_ip, port=5000, beacon_port=5001, udp_input_port=5002):
+def run_udp_discovery_beacon(port=5000, beacon_port=5001, udp_input_port=5002):
     """
     Broadcasts UDP announcements periodically on the LAN so mobile apps
     can auto-discover the host PC without typing IP addresses.
+    Dynamically tracks IP changes so network switching (e.g. Wi-Fi to hotspot)
+    is handled automatically.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-    payload = json.dumps({
-        "app": "RemoteTrackpadPro",
-        "name": socket.gethostname(),
-        "ip": lan_ip,
-        "port": port,
-        "udp_port": udp_input_port
-    }).encode("utf-8")
-
-    parts = lan_ip.split(".")
-    subnet_bcast = ".".join(parts[:3]) + ".255" if len(parts) == 4 else None
-
     while True:
         try:
+            lan_ip = get_lan_ip()
+            payload = json.dumps({
+                "app": "RemoteTrackpadPro",
+                "name": socket.gethostname(),
+                "ip": lan_ip,
+                "port": port,
+                "udp_port": udp_input_port
+            }).encode("utf-8")
+
+            # 1. Global LAN broadcast
             sock.sendto(payload, ("255.255.255.255", beacon_port))
-            if subnet_bcast:
+
+            # 2. Subnet directed broadcast
+            parts = lan_ip.split(".")
+            if len(parts) == 4 and not lan_ip.startswith("127."):
+                subnet_bcast = ".".join(parts[:3]) + ".255"
                 sock.sendto(payload, (subnet_bcast, beacon_port))
         except Exception:
             pass
-        time.sleep(2.0)
+        time.sleep(1.5)
 
 
 def print_startup_banner(lan_ip, port=5000, udp_port=5002):
@@ -659,7 +680,7 @@ def start_server_worker(port=5000, udp_beacon_port=5001, udp_input_port=5002):
     # 1. Start UDP Discovery Beacon in background daemon thread
     beacon_thread = threading.Thread(
         target=run_udp_discovery_beacon,
-        args=(lan_ip, port, udp_beacon_port, udp_input_port),
+        args=(port, udp_beacon_port, udp_input_port),
         daemon=True
     )
     beacon_thread.start()

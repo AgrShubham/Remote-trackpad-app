@@ -57,9 +57,33 @@ def acquire_single_instance_mutex():
 
 # ----------------- Subprocess Worker Management ----------------- #
 worker_proc = None
+watchdog_active = True
+
+def kill_port_process(port=5000):
+    """Find and kill any stale process holding the given TCP port."""
+    if sys.platform != "win32":
+        return
+    try:
+        res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+        my_pid = os.getpid()
+        killed = []
+        for line in res.stdout.splitlines():
+            if f":{port}" in line and "LISTENING" in line:
+                parts = line.strip().split()
+                if len(parts) >= 5:
+                    pid = int(parts[-1])
+                    if pid != my_pid and pid > 0 and pid not in killed:
+                        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+                        killed.append(pid)
+    except Exception as e:
+        print("Error freeing port:", e)
 
 def start_worker_process():
     global worker_proc
+    # Free port 5000 from any orphan or zombie server processes first
+    kill_port_process(5000)
+    time.sleep(0.3)
+
     if getattr(sys, 'frozen', False):
         cmd = [sys.executable, "--worker"]
     else:
@@ -71,8 +95,20 @@ def start_worker_process():
     except Exception as e:
         print("Failed to spawn background server worker:", e)
 
+def watchdog_loop():
+    """Background watchdog that restarts the server worker if it ever exits unexpectedly."""
+    global worker_proc, watchdog_active
+    while watchdog_active:
+        time.sleep(3.0)
+        if not watchdog_active:
+            break
+        if worker_proc is not None and worker_proc.poll() is not None:
+            print("Background server worker exited unexpectedly. Auto-restarting...", flush=True)
+            start_worker_process()
+
 def cleanup_worker():
-    global worker_proc
+    global worker_proc, watchdog_active
+    watchdog_active = False
     if worker_proc and worker_proc.poll() is None:
         try:
             worker_proc.terminate()
@@ -88,15 +124,28 @@ atexit.register(cleanup_worker)
 
 # ----------------- Network Helper ----------------- #
 def get_lan_ip():
+    """Detect local Wi-Fi / LAN IP address with offline fallback."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
+        if ip and not ip.startswith("127."):
+            return ip
     except Exception:
-        ip = "127.0.0.1"
+        pass
     finally:
         s.close()
-    return ip
+
+    try:
+        hostname = socket.gethostname()
+        _, _, ips = socket.gethostbyname_ex(hostname)
+        for ip in ips:
+            if not ip.startswith("127.") and not ip.startswith("169.254."):
+                return ip
+    except Exception:
+        pass
+
+    return "127.0.0.1"
 
 # ----------------- Windows Startup Registry Helper ----------------- #
 REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -350,12 +399,15 @@ def main():
     # 2. Spawn isolated background server worker (Pure Gevent, Zero GUI interference)
     start_worker_process()
 
+    # 3. Start background watchdog to auto-restart worker if ever terminated
+    threading.Thread(target=watchdog_loop, daemon=True).start()
+
     dashboard = ControlDashboard(lan_ip, port)
 
-    # 3. If run by user double-click, pop up the dashboard initially
+    # 4. If run by user double-click, pop up the dashboard initially
     threading.Thread(target=dashboard.show, daemon=True).start()
 
-    # 4. Run System Tray on main thread
+    # 5. Run System Tray on main thread
     setup_system_tray(lan_ip, port)
 
 if __name__ == "__main__":

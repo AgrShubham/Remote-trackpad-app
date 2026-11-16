@@ -139,9 +139,14 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({ visible, onClo
     setActiveTab(tab);
   };
 
-  // Derive PC Server download URL based on discovered host or default local subnet
-  const hostIp = discoveredHosts.length > 0 ? discoveredHosts[0].ip : (ip.trim() || '192.168.29.228');
-  const serverDownloadUrl = `http://${hostIp}:8080/RemoteMouseServer.exe`;
+  const handleRescan = () => {
+    hapticsService.light();
+    discoveryService.rescan();
+  };
+
+  // Derive PC Server download URL based on discovered host or manual IP
+  const hostIp = discoveredHosts.length > 0 ? discoveredHosts[0].ip : ip.trim();
+  const serverDownloadUrl = hostIp ? `http://${hostIp}:8080/RemoteMouseServer.exe` : 'http://<PC_IP>:8080/RemoteMouseServer.exe';
 
   const handleShareLink = async () => {
     hapticsService.light();
@@ -300,13 +305,23 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({ visible, onClo
                 <View style={styles.section}>
                   <View style={styles.sectionHeaderRow}>
                     <Text style={styles.sectionTitle}>📡 Discovered PCs on Wi-Fi</Text>
-                    {discoveredHosts.length > 0 ? (
-                      <View style={styles.hostCountPill}>
-                        <Text style={styles.hostCountText}>{discoveredHosts.length} Found</Text>
-                      </View>
-                    ) : (
-                      <ActivityIndicator size="small" color="#60a5fa" />
-                    )}
+                    <View style={styles.headerRightActions}>
+                      <TouchableOpacity
+                        style={styles.rescanBtn}
+                        onPress={handleRescan}
+                        focusable={false}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.rescanBtnText}>🔄 Rescan</Text>
+                      </TouchableOpacity>
+                      {discoveredHosts.length > 0 ? (
+                        <View style={styles.hostCountPill}>
+                          <Text style={styles.hostCountText}>{discoveredHosts.length} Found</Text>
+                        </View>
+                      ) : (
+                        <ActivityIndicator size="small" color="#60a5fa" />
+                      )}
+                    </View>
                   </View>
 
                   {discoveredHosts.length === 0 ? (
@@ -765,6 +780,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rescanBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 7,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+  },
+  rescanBtnText: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '700',
   },
   sectionTitle: {
     color: '#cbd5e1',
