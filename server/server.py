@@ -238,20 +238,38 @@ def native_mouse_up(button="left"):
         print("Fallback mouse.release error:", e, flush=True)
 
 
+# Subpixel scroll accumulators for Windows smooth wheel physics
+scroll_accum_x = 0.0
+scroll_accum_y = 0.0
+
 def native_mouse_scroll(dx, dy):
+    global scroll_accum_x, scroll_accum_y
     ensure_desktop()
+
+    # Invert dy so dragging two fingers down (dy > 0) scrolls down (negative WHEEL_DELTA in Windows Win32)
+    # Scale factor: 1 touch delta roughly equals 25 wheel delta units
+    scroll_accum_y += (-float(dy)) * 25.0
+    scroll_accum_x += float(dx) * 25.0
+
     if user32:
         try:
-            if dy != 0:
-                wheel_delta = int(dy * 20)
-                user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheel_delta, 0)
-            if dx != 0:
-                hwheel_delta = int(dx * 20)
-                user32.mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, hwheel_delta, 0)
+            # Emit wheel event when accumulated delta has reached threshold (>= 15)
+            if abs(scroll_accum_y) >= 15.0:
+                step_y = int(scroll_accum_y)
+                user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, step_y, 0)
+                scroll_accum_y -= step_y
+
+            if abs(scroll_accum_x) >= 15.0:
+                step_x = int(scroll_accum_x)
+                user32.mouse_event(MOUSEEVENTF_HWHEEL, 0, 0, step_x, 0)
+                scroll_accum_x -= step_x
             return
         except Exception:
             pass
+
     try:
+        # Fallback to pynput: mouse.scroll(dx, dy)
+        # Note: in pynput, positive dy scrolls down
         mouse.scroll(int(dx), int(dy))
     except Exception as e:
         print("Fallback mouse.scroll error:", e, flush=True)
@@ -374,19 +392,11 @@ def handle_mouse_up(data):
 
 @socketio.on("scroll")
 def handle_scroll(data):
-    global subpixel_scroll_x, subpixel_scroll_y
     try:
-        dx = float(data.get("dx", 0)) + subpixel_scroll_x
-        dy = float(data.get("dy", 0)) + subpixel_scroll_y
-
-        int_dx = int(dx)
-        int_dy = int(dy)
-
-        subpixel_scroll_x = dx - int_dx
-        subpixel_scroll_y = dy - int_dy
-
-        if int_dx != 0 or int_dy != 0:
-            native_mouse_scroll(int_dx, int_dy)
+        dx = float(data.get("dx", 0))
+        dy = float(data.get("dy", 0))
+        if dx != 0 or dy != 0:
+            native_mouse_scroll(dx, dy)
     except Exception as e:
         print("Error in scroll:", e, flush=True)
 

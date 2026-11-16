@@ -122,17 +122,17 @@ class SocketService {
     this.socket.emit('move', { dx, dy });
   }
 
-  public click(button: 'left' | 'right' = 'left', count: number = 1) {
+  public click(button: 'left' | 'right' | 'middle' = 'left', count: number = 1) {
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('click', { button, count });
   }
 
-  public mouseDown(button: 'left' | 'right' = 'left') {
+  public mouseDown(button: 'left' | 'right' | 'middle' = 'left') {
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('mouse_down', { button });
   }
 
-  public mouseUp(button: 'left' | 'right' = 'left') {
+  public mouseUp(button: 'left' | 'right' | 'middle' = 'left') {
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('mouse_up', { button });
   }

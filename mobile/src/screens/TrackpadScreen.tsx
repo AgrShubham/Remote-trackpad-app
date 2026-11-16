@@ -46,9 +46,12 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   const touchStartTime = useRef<number>(0);
   const touchStartX = useRef<number>(0);
   const touchStartY = useRef<number>(0);
-  const touchCount = useRef<number>(0);
-  const hasMoved = useRef<boolean>(false);
+  const maxTouches = useRef<number>(0);
+  const prevTouchCount = useRef<number>(0);
+  const isScrolling = useRef<boolean>(false);
   const lastTapTime = useRef<number>(0);
+  const lastTapX = useRef<number>(0);
+  const lastTapY = useRef<number>(0);
   const isDraggingRef = useRef<boolean>(false);
 
   // Scroll tracking & momentum
@@ -151,29 +154,43 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
         const now = Date.now();
         const touches = evt.nativeEvent.touches;
-        touchCount.current = touches.length;
-        hasMoved.current = false;
+        const numTouches = touches.length;
+
+        maxTouches.current = numTouches;
+        prevTouchCount.current = numTouches;
+        isScrolling.current = false;
 
         touchStartTime.current = now;
         lastTouchTime.current = now;
 
-        if (touches.length === 1) {
-          touchStartX.current = touches[0].pageX;
-          touchStartY.current = touches[0].pageY;
-          lastTouchX.current = touches[0].pageX;
-          lastTouchY.current = touches[0].pageY;
+        if (numTouches === 1) {
+          const x = touches[0].pageX;
+          const y = touches[0].pageY;
+          touchStartX.current = x;
+          touchStartY.current = y;
+          lastTouchX.current = x;
+          lastTouchY.current = y;
 
-          // Double tap check for drag lock
-          if (now - lastTapTime.current < 300) {
+          // Double tap check for drag lock:
+          // Second tap arrives within 350ms and within 45px radius of previous single tap
+          const timeSinceLastTap = now - lastTapTime.current;
+          const distFromLastTap = Math.hypot(x - lastTapX.current, y - lastTapY.current);
+
+          if (timeSinceLastTap < 350 && distFromLastTap < 45) {
             isDraggingRef.current = true;
             setIsDragLocked(true);
             socketService.mouseDown('left');
             hapticsService.dragLock();
+            lastTapTime.current = 0; // prevent re-triggering
           }
-        } else if (touches.length === 2) {
-          lastTouchX.current = (touches[0].pageX + touches[1].pageX) / 2;
-          lastTouchY.current = (touches[0].pageY + touches[1].pageY) / 2;
-          lastScrollY.current = lastTouchY.current;
+        } else if (numTouches >= 2) {
+          const avgX = (touches[0].pageX + touches[1].pageX) / 2;
+          const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+          touchStartX.current = avgX;
+          touchStartY.current = avgY;
+          lastTouchX.current = avgX;
+          lastTouchY.current = avgY;
+          lastScrollY.current = avgY;
           scrollVelocityY.current = 0;
         }
       },
@@ -181,38 +198,66 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
       onPanResponderMove: (evt: GestureResponderEvent, _gestureState: PanResponderGestureState) => {
         const now = Date.now();
         const touches = evt.nativeEvent.touches;
+        const numTouches = touches.length;
 
-        if (touches.length === 1) {
-          // Single finger cursor glide with zero-wait direct dispatch
+        // Keep running high-water mark of fingers involved in this gesture
+        if (numTouches > maxTouches.current) {
+          maxTouches.current = numTouches;
+        }
+
+        // Multi-touch transition handling:
+        // When transitioning between 1 and 2+ fingers, re-anchor coordinates and suppress jump spikes!
+        if (numTouches !== prevTouchCount.current) {
+          prevTouchCount.current = numTouches;
+          if (numTouches === 1) {
+            lastTouchX.current = touches[0].pageX;
+            lastTouchY.current = touches[0].pageY;
+          } else if (numTouches >= 2) {
+            const avgX = (touches[0].pageX + touches[1].pageX) / 2;
+            const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+            lastTouchX.current = avgX;
+            lastTouchY.current = avgY;
+            lastScrollY.current = avgY;
+            scrollVelocityY.current = 0;
+          }
+          return; // Skip delta dispatch on transition frame
+        }
+
+        if (numTouches === 1) {
+          // Single finger cursor glide
           const currentX = touches[0].pageX;
           const currentY = touches[0].pageY;
 
           const rawDx = currentX - lastTouchX.current;
           const rawDy = currentY - lastTouchY.current;
 
-          if (Math.abs(rawDx) > 0.05 || Math.abs(rawDy) > 0.05) {
-            hasMoved.current = true;
-            const { dx, dy } = computeAcceleratedDelta(rawDx, rawDy);
+          // Compute accelerated delta with natural ballistics
+          const { dx, dy } = computeAcceleratedDelta(rawDx, rawDy);
+          if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
             socketService.move(dx, dy);
           }
 
           lastTouchX.current = currentX;
           lastTouchY.current = currentY;
           lastTouchTime.current = now;
-        } else if (touches.length >= 2) {
-          // Two finger scrolling
-          hasMoved.current = true;
-          const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+        } else if (numTouches >= 2) {
+          // Two-finger scrolling
           const avgX = (touches[0].pageX + touches[1].pageX) / 2;
+          const avgY = (touches[0].pageY + touches[1].pageY) / 2;
 
-          const rawDy = avgY - lastTouchY.current;
+          const distFromStart = Math.hypot(avgX - touchStartX.current, avgY - touchStartY.current);
+          if (distFromStart > 6) {
+            isScrolling.current = true;
+          }
+
           const rawDx = avgX - lastTouchX.current;
+          const rawDy = avgY - lastTouchY.current;
 
           const scrollFactor = 0.85 * speedRef.current;
           const scrollDx = rawDx * scrollFactor;
           const scrollDy = rawDy * scrollFactor;
 
-          if (Math.abs(scrollDx) > 0.3 || Math.abs(scrollDy) > 0.3) {
+          if (Math.abs(scrollDx) > 0.2 || Math.abs(scrollDy) > 0.2) {
             socketService.scroll(scrollDx, scrollDy);
             scrollVelocityY.current = scrollDy;
           }
@@ -223,34 +268,55 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         }
       },
 
-      onPanResponderRelease: (_evt: GestureResponderEvent) => {
+      onPanResponderRelease: (evt: GestureResponderEvent) => {
         const now = Date.now();
         const duration = now - touchStartTime.current;
 
-        // If in drag lock mode, release mouse
+        // 1. If currently in drag lock mode, release mouse
         if (isDraggingRef.current) {
           isDraggingRef.current = false;
           setIsDragLocked(false);
           socketService.mouseUp('left');
           hapticsService.dragLock();
+          lastTapTime.current = 0;
           return;
         }
 
-        if (!hasMoved.current && duration < 250) {
-          if (touchCount.current === 1) {
-            // Single finger tap -> Left Click
+        // 2. Compute net displacement from initial touch down to release
+        const changedTouches = evt.nativeEvent.changedTouches;
+        const releaseX = changedTouches && changedTouches.length > 0 ? changedTouches[0].pageX : lastTouchX.current;
+        const releaseY = changedTouches && changedTouches.length > 0 ? changedTouches[0].pageY : lastTouchY.current;
+        const totalTravel = Math.hypot(releaseX - touchStartX.current, releaseY - touchStartY.current);
+
+        const highestTouch = maxTouches.current;
+
+        // Standard touch slop: displacement < 14px and tap duration < 280ms
+        const isTap = duration < 280 && totalTravel < 14;
+
+        if (isTap) {
+          if (highestTouch === 1) {
+            // Single-finger tap -> Left Click
             socketService.click('left');
             hapticsService.clickLeft();
             audioService.playHapticClick();
             lastTapTime.current = now;
-          } else if (touchCount.current === 2) {
-            // Two finger tap -> Right Click
+            lastTapX.current = releaseX;
+            lastTapY.current = releaseY;
+          } else if (highestTouch === 2) {
+            // Two-finger tap -> Right Click
             socketService.click('right');
             hapticsService.clickRight();
             audioService.playHapticClick();
+            lastTapTime.current = 0;
+          } else if (highestTouch >= 3) {
+            // Three-finger tap -> Middle Click
+            socketService.click('middle');
+            hapticsService.clickRight();
+            audioService.playHapticClick();
+            lastTapTime.current = 0;
           }
-        } else if (touchCount.current >= 2 && Math.abs(scrollVelocityY.current) > 1.2) {
-          // Start momentum scroll glide
+        } else if (highestTouch >= 2 && isScrolling.current && Math.abs(scrollVelocityY.current) > 1.0) {
+          // Two-finger kinetic scroll inertia
           startInertia(scrollVelocityY.current * 0.85);
         }
       },
