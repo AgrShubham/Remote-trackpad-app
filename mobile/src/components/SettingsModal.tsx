@@ -312,7 +312,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
               <View style={styles.card}>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoKey}>App Version</Text>
-                  <Text style={styles.infoVal}>v1.0.0 Pro (Zero-Lag Edition)</Text>
+                  <Text style={styles.infoVal}>v1.2.1 Pro (Zero-Lag Edition)</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoKey}>Active Host</Text>
