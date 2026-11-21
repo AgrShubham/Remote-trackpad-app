@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../theme/colors';
 import { socketService, ConnectionStatus } from '../services/SocketService';
 import { discoveryService, DiscoveredHost } from '../services/DiscoveryService';
+import { autoConnectService } from '../services/AutoConnectService';
 import { hapticsService } from '../services/HapticsService';
 
 const RECENT_SERVERS_KEY = '@remote_mouse_recent_servers';
@@ -121,12 +122,23 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({ visible, onClo
     } catch (e) {}
   };
 
-  const handleConnect = (targetIp: string, targetPort: string = '5000', udpPort: number = 5002) => {
+  const handleConnect = (
+    targetIp: string,
+    targetPort: string = '5000',
+    udpPort: number = 5002,
+    hostName?: string
+  ) => {
     if (!targetIp.trim()) return;
     hapticsService.light();
     const p = parseInt(targetPort, 10) || 5000;
     saveRecentServer(`${targetIp.trim()}:${p}`);
-    socketService.connect(targetIp.trim(), p, udpPort);
+    autoConnectService.rememberServer({
+      name: hostName || targetIp.trim(),
+      ip: targetIp.trim(),
+      port: p,
+      udpPort,
+    });
+    socketService.connect(targetIp.trim(), p, udpPort, hostName);
   };
 
   const handleDisconnect = () => {
@@ -375,7 +387,7 @@ export const ConnectionModal: React.FC<ConnectionModalProps> = ({ visible, onClo
                         key={`${host.ip}:${host.port}`}
                         style={styles.hostCard}
                         onPress={() =>
-                          handleConnect(host.ip, host.port.toString(), host.udpPort || 5002)
+                          handleConnect(host.ip, host.port.toString(), host.udpPort || 5002, host.name)
                         }
                         activeOpacity={0.85}
                         focusable={false}

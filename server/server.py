@@ -588,68 +588,111 @@ def handle_gamepad_release_all():
 
 
 
-def get_lan_ip():
+def get_all_lan_ips():
     """
-    Detect local Wi-Fi / LAN IP address with offline fallback.
-    Works on home Wi-Fi, office LAN, phone hotspots, and offline ad-hoc networks.
+    Detect all active IPv4 addresses across local Wi-Fi, Ethernet, Mobile Hotspots,
+    and Wi-Fi Direct virtual adapters.
     """
-    # 1. Quick probe to outbound socket (handles internet-connected networks)
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    ips = []
+    # 1. Quick probe to outbound public route (detects internet-connected interface)
     try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        if ip and not ip.startswith("127."):
-            return ip
+        probe_ip = s.getsockname()[0]
+        if probe_ip and not probe_ip.startswith("127."):
+            ips.append(probe_ip)
+        s.close()
     except Exception:
         pass
-    finally:
-        s.close()
 
-    # 2. Hostname enumeration fallback (works on offline LANs and hotspots)
+    # 2. Hostname enumeration (discovers multi-homed adapters, e.g. hotspot 192.168.137.1)
     try:
         hostname = socket.gethostname()
-        _, _, ips = socket.gethostbyname_ex(hostname)
-        for ip in ips:
-            if not ip.startswith("127.") and not ip.startswith("169.254."):
-                return ip
+        _, _, host_ips = socket.gethostbyname_ex(hostname)
+        for hip in host_ips:
+            if not hip.startswith("127.") and not hip.startswith("169.254.") and hip not in ips:
+                ips.append(hip)
     except Exception:
         pass
 
-    return "127.0.0.1"
+    if not ips:
+        ips.append("127.0.0.1")
+    return ips
+
+
+def get_lan_ip():
+    """
+    Returns the primary LAN IP.
+    """
+    all_ips = get_all_lan_ips()
+    return all_ips[0] if all_ips else "127.0.0.1"
 
 
 def run_udp_discovery_beacon(port=5000, beacon_port=5001, udp_input_port=5002):
     """
-    Broadcasts UDP announcements periodically on the LAN so mobile apps
-    can auto-discover the host PC without typing IP addresses.
-    Dynamically tracks IP changes so network switching (e.g. Wi-Fi to hotspot)
-    is handled automatically.
+    Broadcasts UDP announcements periodically on all active network interfaces
+    so mobile apps can auto-discover and auto-reconnect to the host PC instantly
+    when network conditions change (Wi-Fi roaming, mobile hotspot switch, sleep/wake).
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock = None
+
+    def get_broadcast_socket():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        return s
+
+    sock = get_broadcast_socket()
+    loop_count = 0
 
     while True:
         try:
-            lan_ip = get_lan_ip()
-            payload = json.dumps({
-                "app": "RemoteTrackpadPro",
-                "name": socket.gethostname(),
-                "ip": lan_ip,
-                "port": port,
-                "udp_port": udp_input_port
-            }).encode("utf-8")
+            loop_count += 1
+            # Refresh broadcast socket every 60 seconds to avoid stale adapter handles in Windows
+            if loop_count % 60 == 0:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = get_broadcast_socket()
 
-            # 1. Global LAN broadcast
-            sock.sendto(payload, ("255.255.255.255", beacon_port))
+            all_ips = get_all_lan_ips()
+            hostname = socket.gethostname()
 
-            # 2. Subnet directed broadcast
-            parts = lan_ip.split(".")
-            if len(parts) == 4 and not lan_ip.startswith("127."):
-                subnet_bcast = ".".join(parts[:3]) + ".255"
-                sock.sendto(payload, (subnet_bcast, beacon_port))
+            for lan_ip in all_ips:
+                payload = json.dumps({
+                    "app": "RemoteTrackpadPro",
+                    "name": hostname,
+                    "ip": lan_ip,
+                    "all_ips": all_ips,
+                    "port": port,
+                    "udp_port": udp_input_port,
+                    "version": "1.3.0"
+                }).encode("utf-8")
+
+                # 1. Global LAN broadcast
+                try:
+                    sock.sendto(payload, ("255.255.255.255", beacon_port))
+                except Exception:
+                    pass
+
+                # 2. Subnet directed broadcast (e.g. 192.168.1.255, 192.168.137.255)
+                parts = lan_ip.split(".")
+                if len(parts) == 4 and not lan_ip.startswith("127."):
+                    subnet_bcast = ".".join(parts[:3]) + ".255"
+                    try:
+                        sock.sendto(payload, (subnet_bcast, beacon_port))
+                    except Exception:
+                        pass
         except Exception:
-            pass
-        time.sleep(1.5)
+            # Recreate socket on error (e.g. network interface was dropped/toggled)
+            try:
+                sock.close()
+            except Exception:
+                pass
+            sock = get_broadcast_socket()
+
+        # Ultra-responsive 1.0 second beacon interval for instant discovery
+        time.sleep(1.0)
 
 
 def print_startup_banner(lan_ip, port=5000, udp_port=5002):

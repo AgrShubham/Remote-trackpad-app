@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-11-21
+
+### Added
+- **Autonomous Instant-Connect Engine (`AutoConnectService.ts`)**:
+  - Global, lifecycle-wide UDP beacon listener that detects and auto-connects to known or sole local servers in under 1 second without opening the connection modal.
+  - **Dynamic Host IP Migration (Zero-Touch Reconnection)**: Tracks host PCs by `hostname` rather than static IP. If the PC or mobile changes networks (e.g. Wi-Fi router to mobile hotspot, IP lease renewal), the app recognizes the host's new IP address from real-time beacons and hot-migrates the active socket and UDP motion target immediately.
+  - **AppState Sleep/Wake Adaptation**: Listens to React Native `AppState` transitions. When the phone wakes from sleep or returns from background, it triggers an instant discovery rescan and fast socket health verification.
+  - **Persistent Server Memory**: Caches the last connected server (`name`, `ip`, `port`, `udpPort`) in `AsyncStorage` and initiates immediate boot reconnect.
+- **Multi-Adapter Host Beacon Broadcast (`server/server.py`)**:
+  - Replaced single-IP detection with `get_all_lan_ips()` to discover all active network interfaces simultaneously (Wi-Fi, Ethernet, Windows Mobile Hotspot virtual adapters `192.168.137.x`, Wi-Fi Direct).
+  - Broadcasts UDP beacons on all local subnet broadcast addresses (`x.x.x.255`) and global broadcast (`255.255.255.255`) every 1.0 second.
+  - Added periodic 60-second broadcast socket recycling and exception recreation to prevent stale adapter handles when Windows network interfaces are toggled.
+- **Real-Time Per-Beacon Subscription (`DiscoveryService.ts`)**:
+  - Added `onBeacon()` event listener to trigger instant callback execution immediately upon receiving UDP packets, reducing auto-connect latency from 3000ms polling to <1000ms.
+  - Added case-insensitive hostname index mapping (`hostsByName`) and reduced stale host cleanup window to 6.0 seconds.
+- **Resilient Infinite Backoff & Fast Heartbeat Timeout (`SocketService.ts`)**:
+  - Configured Socket.IO with `reconnectionAttempts: Infinity` and capped fast backoff (500ms initial, 2500ms max) to maintain persistent reconnection attempts across prolonged network transitions.
+  - Added 2-cycle missed ping watchdog (2500ms interval, 1800ms ping timeout) that flags disconnected state within ~4 seconds if a network interface drops silently without a TCP FIN/RST packet.
+- **Dynamic UDP Socket Re-Binding (`UdpInputService.ts`)**:
+  - Recreates and rebinds the native ephemeral UDP sending socket whenever the target IP changes, ensuring motion packets correctly route out the newly active network adapter.
+
+---
+
 ## [1.2.1] - 2026-11-16
 
 ### Added

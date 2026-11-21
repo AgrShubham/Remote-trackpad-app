@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Colors } from './theme/colors';
 import { socketService, ConnectionStatus } from './services/SocketService';
+import { autoConnectService } from './services/AutoConnectService';
 import { hapticsService } from './services/HapticsService';
 import { settingsService, ACCENT_PALETTES, AppSettings } from './services/SettingsService';
 import { ConnectionModal } from './components/ConnectionModal';
@@ -78,9 +79,9 @@ export default function App() {
               numberOfLines={1}
             >
               {connectionStatus === 'connected'
-                ? `Connected ✔${latency > 0 ? ` (${latency}ms)` : ''}`
+                ? `Connected ✔ ${socketService.getServerName() ? `${socketService.getServerName()} ` : ''}${latency > 0 ? `(${latency}ms)` : ''}`
                 : connectionStatus === 'connecting'
-                ? 'Connecting...'
+                ? `Connecting${socketService.getServerName() ? ` to ${socketService.getServerName()}...` : '...'}`
                 : 'Disconnected ✖ (Tap to Connect)'}
             </Text>
           </TouchableOpacity>

@@ -8,10 +8,15 @@ type StatusListener = (status: ConnectionStatus, latencyMs: number) => void;
 class SocketService {
   private socket: Socket | null = null;
   private currentHost: string = '';
+  private currentServerName: string = '';
+  private currentIp: string = '';
+  private currentPort: number = 5000;
+  private currentUdpPort: number = 5002;
   private status: ConnectionStatus = 'disconnected';
   private latency: number = 0;
   private listeners: Set<StatusListener> = new Set();
   private pingInterval: any = null;
+  private missedPings: number = 0;
 
   public subscribe(listener: StatusListener): () => void {
     this.listeners.add(listener);
@@ -20,6 +25,7 @@ class SocketService {
   }
 
   private setStatus(newStatus: ConnectionStatus) {
+    if (this.status === newStatus) return;
     this.status = newStatus;
     this.notify();
   }
@@ -28,14 +34,28 @@ class SocketService {
     this.listeners.forEach((listener) => listener(this.status, this.latency));
   }
 
-  public connect(ip: string, port: number = 5000, udpPort: number = 5002) {
+  public connect(ip: string, port: number = 5000, udpPort: number = 5002, serverName?: string) {
+    const host = `http://${ip}:${port}`;
+
+    // If already actively connected to this exact IP and port, ignore duplicate call
+    if (this.socket && this.socket.connected && this.currentHost === host) {
+      if (serverName) this.currentServerName = serverName;
+      return;
+    }
+
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
 
-    const host = `http://${ip}:${port}`;
     this.currentHost = host;
+    this.currentIp = ip;
+    this.currentPort = port;
+    this.currentUdpPort = udpPort;
+    if (serverName) {
+      this.currentServerName = serverName;
+    }
+
     this.setStatus('connecting');
 
     // Initialize ultra-low latency UDP motion streamer
@@ -44,13 +64,15 @@ class SocketService {
     this.socket = io(host, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      timeout: 6000,
+      reconnectionAttempts: Infinity, // Keep retrying while network is transitioning
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 2500,
+      timeout: 4000,
       autoConnect: true,
     });
 
     this.socket.on('connect', () => {
+      this.missedPings = 0;
       this.setStatus('connected');
       this.startPingMonitor();
     });
@@ -89,17 +111,49 @@ class SocketService {
     return this.currentHost;
   }
 
+  public getHostIp(): string {
+    return this.currentIp;
+  }
+
+  public getServerName(): string {
+    return this.currentServerName;
+  }
+
+  public getPort(): number {
+    return this.currentPort;
+  }
+
+  public getUdpPort(): number {
+    return this.currentUdpPort;
+  }
+
   private startPingMonitor() {
     this.stopPingMonitor();
+    this.missedPings = 0;
     this.pingInterval = setInterval(() => {
       if (this.socket && this.socket.connected) {
         const start = Date.now();
+        let responded = false;
+
         this.socket.emit('ping_check', () => {
+          responded = true;
+          this.missedPings = 0;
           this.latency = Date.now() - start;
           this.notify();
         });
+
+        // Fast timeout check: If no ping response after 1800ms, record missed ping
+        setTimeout(() => {
+          if (!responded && this.status === 'connected') {
+            this.missedPings++;
+            if (this.missedPings >= 2) {
+              console.warn('[SocketService] Heartbeat dead: 2 missed pings. Flagging disconnected for auto-reconnect.');
+              this.setStatus('disconnected');
+            }
+          }
+        }, 1800);
       }
-    }, 3000);
+    }, 2500);
   }
 
   private stopPingMonitor() {
@@ -108,6 +162,7 @@ class SocketService {
       this.pingInterval = null;
     }
     this.latency = 0;
+    this.missedPings = 0;
   }
 
   // ==================== Mouse Operations (Zero-Lag UDP Motion Pipeline) ====================

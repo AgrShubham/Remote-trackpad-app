@@ -36,9 +36,10 @@ class UdpInputService {
   }
 
   public setTarget(host: string, port: number = 5002) {
+    const targetChanged = this.targetHost !== host || this.targetPort !== port;
     this.targetHost = host;
     this.targetPort = port;
-    if (!this.socket || !this.isBound) {
+    if (targetChanged || !this.socket || !this.isBound) {
       this.initSocket();
     }
   }

@@ -19,8 +19,8 @@ android {
         applicationId "com.agshubham.remotemouse"
         minSdkVersion 24
         targetSdkVersion 34
-        versionCode 2
-        versionName "1.2.1"
+        versionCode 3
+        versionName "1.3.0"
     }
 
     signingConfigs {
