@@ -6,20 +6,34 @@ import {
   Text,
   View,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { Colors } from './theme/colors';
 import { socketService, ConnectionStatus } from './services/SocketService';
 import { autoConnectService } from './services/AutoConnectService';
 import { hapticsService } from './services/HapticsService';
 import { settingsService, ACCENT_PALETTES, AppSettings } from './services/SettingsService';
+import { authService, UserProfile } from './services/AuthService';
 import { ConnectionModal } from './components/ConnectionModal';
 import { SettingsModal } from './components/SettingsModal';
+import { SplashScreen } from './screens/SplashScreen';
+import { LoginScreen } from './screens/LoginScreen';
+import { ConnectionGateModal } from './components/ConnectionGateModal';
+import { ServerSwitcherBar } from './components/ServerSwitcherBar';
+import { ServerSwitcherDrawer } from './components/ServerSwitcherDrawer';
 import { TrackpadScreen } from './screens/TrackpadScreen';
 import { GamepadScreen } from './screens/GamepadScreen';
 import { KeyboardScreen } from './screens/KeyboardScreen';
 import { MediaScreen } from './screens/MediaScreen';
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(authService.getCurrentUser());
+  const [hasSkippedAuth, setHasSkippedAuth] = useState(authService.hasSkipped());
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [connectionGateSkipped, setConnectionGateSkipped] = useState(false);
+  const [switcherDrawerVisible, setSwitcherDrawerVisible] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'touchpad' | 'gamepad' | 'keyboard' | 'media'>('touchpad');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [latency, setLatency] = useState(0);
@@ -42,14 +56,36 @@ export default function App() {
       setSettings(newSettings);
     });
 
+    const unsubAuth = authService.subscribe((user, skipped) => {
+      setCurrentUser(user);
+      setHasSkippedAuth(skipped);
+    });
+
     return () => {
       unsubSocket();
       unsubSettings();
+      unsubAuth();
     };
   }, []);
 
   const currentAccent = ACCENT_PALETTES[settings.accentTheme] || ACCENT_PALETTES.blue;
 
+  // 1. Splash Screen Phase
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  // 2. Authentication Screen Phase (First time launch if not logged in and not skipped)
+  if (!currentUser && !hasSkippedAuth) {
+    return (
+      <LoginScreen
+        onSuccess={() => {}}
+        onSkip={() => {}}
+      />
+    );
+  }
+
+  // 3. Main App Interface
   return (
     <SafeAreaView style={[styles.container, isFullscreen && styles.containerFullscreen]}>
       <StatusBar hidden={isFullscreen} barStyle="light-content" backgroundColor="#161720" />
@@ -61,7 +97,7 @@ export default function App() {
             style={styles.headerLeftAndCenter}
             onPress={() => {
               hapticsService.light();
-              setModalVisible(true);
+              setSwitcherDrawerVisible(true);
             }}
             activeOpacity={0.8}
             focusable={false}
@@ -82,7 +118,7 @@ export default function App() {
                 ? `Connected ✔ ${socketService.getServerName() ? `${socketService.getServerName()} ` : ''}${latency > 0 ? `(${latency}ms)` : ''}`
                 : connectionStatus === 'connecting'
                 ? `Connecting${socketService.getServerName() ? ` to ${socketService.getServerName()}...` : '...'}`
-                : 'Disconnected ✖ (Tap to Connect)'}
+                : 'Disconnected ✖ (Tap to Switch Server)'}
             </Text>
           </TouchableOpacity>
 
@@ -148,6 +184,18 @@ export default function App() {
         </View>
       )}
 
+      {/* Persistent Dedicated Server Switcher Bar - Hidden in Fullscreen */}
+      {!isFullscreen && (
+        <ServerSwitcherBar
+          status={connectionStatus}
+          serverName={socketService.getServerName()}
+          serverIp={socketService.getHostIp()}
+          latency={latency}
+          onOpenSwitcher={() => setSwitcherDrawerVisible(true)}
+          accentColor={currentAccent.primary}
+        />
+      )}
+
       {/* Main Content View */}
       <View style={[styles.content, isFullscreen && styles.contentFullscreen]}>
         {activeTab === 'touchpad' && (
@@ -176,7 +224,24 @@ export default function App() {
         )}
       </View>
 
-      {/* Connection & Discovery Modal */}
+      {/* Connection Gating Modal (Enforces connection on launch unless skipped) */}
+      <ConnectionGateModal
+        visible={
+          connectionStatus !== 'connected' &&
+          !connectionGateSkipped &&
+          !showSplash
+        }
+        onSkip={() => setConnectionGateSkipped(true)}
+        onConnected={() => setConnectionGateSkipped(true)}
+      />
+
+      {/* Dedicated Server Switcher Bottom Sheet Drawer */}
+      <ServerSwitcherDrawer
+        visible={switcherDrawerVisible}
+        onClose={() => setSwitcherDrawerVisible(false)}
+      />
+
+      {/* Legacy/Manual Connection Modal */}
       <ConnectionModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
@@ -186,7 +251,16 @@ export default function App() {
       <SettingsModal
         visible={settingsModalVisible}
         onClose={() => setSettingsModalVisible(false)}
+        onOpenLogin={() => setShowLoginModal(true)}
       />
+
+      {/* In-App Login Modal (Invoked from Settings if guest user wants to sign in) */}
+      <Modal visible={showLoginModal} animationType="slide">
+        <LoginScreen
+          onSuccess={() => setShowLoginModal(false)}
+          onSkip={() => setShowLoginModal(false)}
+        />
+      </Modal>
     </SafeAreaView>
   );
 }

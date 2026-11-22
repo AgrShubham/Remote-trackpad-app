@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import {
   settingsService,
@@ -16,21 +17,45 @@ import {
 } from '../services/SettingsService';
 import { hapticsService } from '../services/HapticsService';
 import { socketService } from '../services/SocketService';
+import { authService, UserProfile } from '../services/AuthService';
+import { userStorageService } from '../services/UserStorageService';
 
 interface SettingsModalProps {
   visible: boolean;
   onClose: () => void;
+  onOpenLogin?: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  visible,
+  onClose,
+  onOpenLogin,
+}) => {
   const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(authService.getCurrentUser());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(userStorageService.getLastSyncedTime());
 
   useEffect(() => {
-    const unsub = settingsService.subscribe((newSettings) => {
+    const unsubSettings = settingsService.subscribe((newSettings) => {
       setSettings(newSettings);
     });
-    return unsub;
+
+    const unsubAuth = authService.subscribe((newUser) => {
+      setUser(newUser);
+    });
+
+    const unsubSync = userStorageService.subscribe((time, syncing) => {
+      setLastSyncedAt(time);
+      setIsSyncing(syncing);
+    });
+
+    return () => {
+      unsubSettings();
+      unsubAuth();
+      unsubSync();
+    };
   }, []);
 
   const handleToggle = <K extends keyof AppSettings>(key: K) => {
@@ -90,6 +115,97 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
           </View>
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            {/* Section 0: Account & Cloud Backup */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>☁️ ACCOUNT & PREFERENCE BACKUP</Text>
+
+              <View style={styles.card}>
+                {user && !user.isGuest ? (
+                  <View style={styles.accountBox}>
+                    <View style={styles.profileRow}>
+                      <View style={[styles.avatarCircle, { backgroundColor: currentAccent.bgSoft, borderColor: currentAccent.primary }]}>
+                        <Text style={[styles.avatarInitial, { color: currentAccent.primary }]}>
+                          {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'G'}
+                        </Text>
+                      </View>
+                      <View style={styles.profileTextCol}>
+                        <Text style={styles.profileName}>{user.displayName}</Text>
+                        <Text style={styles.profileEmail}>{user.email}</Text>
+                        <View style={styles.syncStatusRow}>
+                          <Text style={styles.syncStatusText}>
+                            {isSyncing
+                              ? '🔄 Syncing preferences to cloud...'
+                              : lastSyncedAt
+                              ? `✔ Cloud Synced (${new Date(lastSyncedAt).toLocaleTimeString()})`
+                              : '✔ Cloud Backup Active'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.accountActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.accountBtn, { borderColor: currentAccent.border }]}
+                        onPress={() => {
+                          hapticsService.light();
+                          userStorageService.syncToCloud();
+                        }}
+                        disabled={isSyncing}
+                        activeOpacity={0.8}
+                      >
+                        {isSyncing ? (
+                          <ActivityIndicator size="small" color="#93c5fd" />
+                        ) : (
+                          <Text style={[styles.accountBtnText, { color: currentAccent.primary }]}>
+                            Sync Now
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.logoutBtn}
+                        onPress={() => {
+                          hapticsService.light();
+                          authService.logout();
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.logoutBtnText}>Sign Out</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.guestBox}>
+                    <View style={styles.guestInfoRow}>
+                      <Text style={styles.guestIcon}>👤</Text>
+                      <View style={styles.guestTextCol}>
+                        <Text style={styles.guestTitle}>Guest Mode (Offline Storage)</Text>
+                        <Text style={styles.guestDesc}>
+                          Sensitivities & custom gamepad layouts are saved only on this phone.
+                        </Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[styles.signInGoogleBtn, { backgroundColor: currentAccent.primary }]}
+                      onPress={async () => {
+                        hapticsService.light();
+                        if (onOpenLogin) {
+                          onClose();
+                          onOpenLogin();
+                        } else {
+                          await authService.loginWithGoogle();
+                        }
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.signInGoogleBtnText}>Sign In with Google for Cloud Backup</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+
             {/* Section 1: Haptic Feedback */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>📳 TACTILE HAPTICS</Text>
@@ -595,6 +711,123 @@ const styles = StyleSheet.create({
   },
   resetBtnTextConfirm: {
     color: '#f87171',
+    fontWeight: '700',
+  },
+  // Account & Cloud Backup Styles
+  accountBox: {
+    paddingVertical: 4,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarInitial: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  profileTextCol: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  profileEmail: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginBottom: 3,
+  },
+  syncStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncStatusText: {
+    fontSize: 10,
+    color: '#4ade80',
+    fontWeight: '600',
+  },
+  accountActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    paddingTop: 10,
+  },
+  accountBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  logoutBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutBtnText: {
+    color: '#f87171',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  guestBox: {
+    paddingVertical: 4,
+  },
+  guestInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  guestIcon: {
+    fontSize: 26,
+    marginRight: 10,
+  },
+  guestTextCol: {
+    flex: 1,
+  },
+  guestTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  guestDesc: {
+    fontSize: 11,
+    color: '#8b8d9c',
+    lineHeight: 15,
+  },
+  signInGoogleBtn: {
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signInGoogleBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '700',
   },
 });

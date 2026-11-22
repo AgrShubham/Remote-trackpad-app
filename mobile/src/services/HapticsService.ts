@@ -60,6 +60,10 @@ class HapticsService {
     this.trigger([0, 18]);
   }
 
+  public medium() {
+    this.trigger([0, 32]);
+  }
+
   public clickLeft() {
     this.trigger([0, 30]);
   }

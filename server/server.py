@@ -666,7 +666,7 @@ def run_udp_discovery_beacon(port=5000, beacon_port=5001, udp_input_port=5002):
                     "all_ips": all_ips,
                     "port": port,
                     "udp_port": udp_input_port,
-                    "version": "1.3.0"
+                    "version": "1.4.0"
                 }).encode("utf-8")
 
                 # 1. Global LAN broadcast

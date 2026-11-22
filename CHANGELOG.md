@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-11-22
+
+### Added
+- **Startup Loading Animation & Splash Screen Engine (`SplashScreen.tsx`)**:
+  - Fullscreen dark obsidian splash screen displaying on cold launch with concentric pulsing radar rings and glowing vector core.
+  - Native driver hardware-accelerated animations: breathing logo core, dual expanding radar rings, progressive subsystem initialization bar, and smooth crossfade unmount into authentication/app interface.
+- **Authentication Screen & Zero-Credential Offline-First Architecture (`LoginScreen.tsx`, `AuthService.ts`, `authConfig.ts`)**:
+  - First interactive UI screen after splash on cold boot (if unauthenticated and unskipped).
+  - Official Google Sign-In button with authentic vector branding and loading indicators.
+  - Zero-Credential Offline-First Architecture: Enables instant Google login simulation and profile testing without requiring a Google Cloud project or OAuth Client ID upfront. Once acquired, entering `GOOGLE_WEB_CLIENT_ID` in `authConfig.ts` activates native Google Play Services OAuth automatically.
+  - **Frictionless Skip Option**: "Skip & Continue as Guest ➔" button allows users to immediately enter the app interface without registering or signing in.
+- **Dual-Mode Cloud & Local Storage Engine (`UserStorageService.ts`)**:
+  - Unified persistence layer synchronizing app settings, custom gamepad button rebinds, joystick deadzones, cursor sensitivity presets, and recent servers.
+  - Authenticated mode: Synchronizes profile preferences to cloud storage (`@remote_mouse_cloud_backup_${uid}`).
+  - Guest mode: Automatically persists all configurations to local `AsyncStorage`.
+  - Automatic migration: Upgrades local guest settings to the cloud upon subsequent Google sign-in.
+- **Account & Cloud Sync Hub (`SettingsModal.tsx`)**:
+  - Added dedicated "ACCOUNT & PREFERENCE BACKUP" section to `SettingsModal`.
+  - Displays user avatar, display name, email, live sync status badge (`✔ Cloud Synced`), manual "Sync Now" button, and "Sign Out" button.
+  - Allows guest users to sign into Google directly from Settings at any time without losing active inputs.
+- **Connection Gating Modal (`ConnectionGateModal.tsx`)**:
+  - Enforces server connection on launch before exposing controls, preventing confusion from disconnected inputs.
+  - Live Wi-Fi radar scanner showing discovered host PCs with 1-tap connection.
+  - Prominent **"Skip & Use Offline ➔"** action giving the user complete autonomy to bypass connection gating and test controls offline.
+- **Persistent Dedicated Server Switcher Bar (`ServerSwitcherBar.tsx`)**:
+  - Dedicated status and navigation bar placed directly under the app tabs, visible across Trackpad, Gamepad, Keyboard, and Media decks.
+  - Real-time status indicator dot (green/yellow/red), server name, latency badge (`⚡ 3ms`), and dedicated `Switch ⇄` button.
+- **Quick Server Switcher Drawer (`ServerSwitcherDrawer.tsx`)**:
+  - Bottom sheet drawer accessible from the Switcher Bar or header status.
+  - Active connection card with live host info and 1-tap "Disconnect".
+  - Discovered Wi-Fi PCs list with 1-tap server migration without leaving the active control deck.
+  - Recent servers history with quick-reconnect shortcuts.
+  - Collapsible manual IP and port configuration.
+- **Extended Haptics (`HapticsService.ts`)**:
+  - Added `medium()` haptic pulse profile for UI modal confirmations and connection events.
+
+---
+
 ## [1.3.0] - 2026-11-21
 
 ### Added
