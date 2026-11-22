@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Collapsible manual IP and port configuration.
 - **Extended Haptics (`HapticsService.ts`)**:
   - Added `medium()` haptic pulse profile for UI modal confirmations and connection events.
+- **Server Application UI & UX Overhaul (`server/server_app.py` & `server/server.py`)**:
+  - **Modern Tabbed Obsidian Dashboard**: Overhauled Windows desktop GUI with dark obsidian styling (`#0c0d14`), live status glows, and custom segmented tabs: **Overview**, **Connected Devices**, **Network Adapters**, and **Settings & Logs**.
+  - **Real-Time Client Telemetry & Device Management**: Live active client tracking with connected device count, client IP, connection duration, and 1-tap **Disconnect ✖** action.
+  - **Windows Desktop Notifications**: Native desktop toast notifications alerted whenever a phone or tablet connects or disconnects.
+  - **Master Input Kill-Switch ("Pause Remote Inputs")**: Dedicated safety toggle in both dashboard and system tray to instantly freeze/unfreeze all remote mouse and keyboard inputs.
+  - **Dynamic Multi-Adapter Network Switcher**: Discovers all active network interfaces (Wi-Fi, Ethernet, Windows Mobile Hotspot `192.168.137.x`) and allows 1-tap switching of the active QR code pairing target.
+  - **Embedded Diagnostic Log Console & REST API**: Background REST bridge (`/api/status`, `/api/pause`, `/api/kick`) providing high-speed telemetry between GUI and Gevent worker with live streaming diagnostic console and copy-to-clipboard.
 
 ---
 

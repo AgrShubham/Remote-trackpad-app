@@ -87,9 +87,95 @@ KEY_MAP = {
 }
 
 
+# ----------------- Real-Time Server State & Telemetry ----------------- #
+from collections import deque
+from flask import request, jsonify
+
+inputs_paused = False
+active_clients = {}
+packet_stats = {
+    "total_udp": 0,
+    "total_tcp": 0,
+    "udp_rate": 0,
+    "_last_rate_time": time.time(),
+    "_counter": 0,
+}
+recent_logs = deque(maxlen=100)
+
+def log_event(level: str, msg: str):
+    entry = {
+        "time": time.strftime("%H:%M:%S"),
+        "level": level,
+        "msg": msg
+    }
+    recent_logs.append(entry)
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    global packet_stats
+    now = time.time()
+    elapsed = now - packet_stats["_last_rate_time"]
+    if elapsed >= 1.0:
+        packet_stats["udp_rate"] = int(packet_stats["_counter"] / elapsed)
+        packet_stats["_counter"] = 0
+        packet_stats["_last_rate_time"] = now
+
+    clients_list = []
+    for sid, c in list(active_clients.items()):
+        clients_list.append({
+            "sid": sid,
+            "ip": c.get("ip", "Unknown"),
+            "user_agent": c.get("user_agent", ""),
+            "connected_seconds": int(now - c.get("connected_at", now)),
+            "ping_ms": c.get("ping_ms", 0),
+            "packets": c.get("packets", 0),
+        })
+
+    return jsonify({
+        "status": "paused" if inputs_paused else "active",
+        "inputs_paused": inputs_paused,
+        "version": "1.4.0",
+        "hostname": socket.gethostname(),
+        "all_ips": get_all_lan_ips(),
+        "clients": clients_list,
+        "client_count": len(clients_list),
+        "packet_stats": {
+            "total_udp": packet_stats["total_udp"],
+            "total_tcp": packet_stats["total_tcp"],
+            "rate_per_sec": packet_stats["udp_rate"],
+        },
+        "logs": list(recent_logs),
+    })
+
+@app.route("/api/pause", methods=["POST"])
+def api_pause():
+    global inputs_paused
+    data = request.get_json(silent=True) or {}
+    if "paused" in data:
+        inputs_paused = bool(data["paused"])
+    else:
+        inputs_paused = not inputs_paused
+    log_event("SYSTEM", f"Remote inputs {'PAUSED' if inputs_paused else 'RESUMED'}")
+    return jsonify({"inputs_paused": inputs_paused})
+
+@app.route("/api/kick", methods=["POST"])
+def api_kick():
+    data = request.get_json(silent=True) or {}
+    sid = data.get("sid")
+    if sid and sid in active_clients:
+        try:
+            from flask_socketio import disconnect
+            disconnect(sid=sid)
+        except Exception:
+            pass
+        active_clients.pop(sid, None)
+        log_event("KICK", f"Disconnected client SID: {sid[:8]}...")
+        return jsonify({"status": "kicked", "sid": sid})
+    return jsonify({"status": "not_found"}), 404
 
 
 # ----------------- Mouse handlers (Native Windows user32 + pynput fallback) ----------------- #
@@ -188,6 +274,8 @@ def native_mouse_move(dx, dy):
 
 
 def native_mouse_click(button="left", count=1):
+    if inputs_paused:
+        return
     ensure_desktop()
     if user32:
         try:
@@ -207,6 +295,8 @@ def native_mouse_click(button="left", count=1):
 
 
 def native_mouse_down(button="left"):
+    if inputs_paused:
+        return
     ensure_desktop()
     if user32:
         try:
@@ -223,6 +313,8 @@ def native_mouse_down(button="left"):
 
 
 def native_mouse_up(button="left"):
+    if inputs_paused:
+        return
     ensure_desktop()
     if user32:
         try:
@@ -244,6 +336,8 @@ scroll_accum_y = 0.0
 
 def native_mouse_scroll(dx, dy):
     global scroll_accum_x, scroll_accum_y
+    if inputs_paused:
+        return
     ensure_desktop()
 
     # Invert dy so dragging two fingers down (dy > 0) scrolls down (negative WHEEL_DELTA in Windows Win32)
@@ -281,6 +375,8 @@ subpixel_y = 0.0
 
 def process_mouse_delta(raw_dx, raw_dy):
     global subpixel_x, subpixel_y
+    if inputs_paused:
+        return
     total_x = raw_dx + subpixel_x
     total_y = raw_dy + subpixel_y
 
@@ -319,6 +415,11 @@ def run_udp_input_server(port=5002):
             data, _ = sock.recvfrom(256)
             if not data:
                 continue
+            packet_stats["total_udp"] += 1
+            packet_stats["_counter"] += 1
+            if inputs_paused:
+                continue
+
             # Format: 'M <dx> <dy>' for move, 'S <dx> <dy>' for scroll
             msg = data.decode("utf-8", errors="ignore").strip()
             parts = msg.split()
@@ -340,20 +441,44 @@ def run_udp_input_server(port=5002):
 @socketio.on("connect")
 def handle_connect(auth=None):
     from flask import request
-    print(f"\n>>> [CLIENT CONNECTED] SID: {request.sid} from IP: {request.remote_addr}", flush=True)
+    sid = request.sid
+    ip = request.remote_addr or "Unknown"
+    agent = request.headers.get("User-Agent", "Remote Mouse Client")
+    active_clients[sid] = {
+        "sid": sid,
+        "ip": ip,
+        "user_agent": agent,
+        "connected_at": time.time(),
+        "last_seen": time.time(),
+        "ping_ms": 0,
+        "packets": 0,
+    }
+    log_event("CONNECT", f"Client connected: {ip}")
+    print(f"\n>>> [CLIENT CONNECTED] SID: {sid} from IP: {ip}", flush=True)
 
 @socketio.on("disconnect")
 def handle_disconnect():
     from flask import request
-    print(f"\n<<< [CLIENT DISCONNECTED] SID: {request.sid}", flush=True)
+    sid = request.sid
+    client = active_clients.pop(sid, None)
+    ip = client["ip"] if client else "Unknown"
+    log_event("DISCONNECT", f"Client disconnected: {ip}")
+    print(f"\n<<< [CLIENT DISCONNECTED] SID: {sid}", flush=True)
 
 @socketio.on("ping_check")
 def handle_ping_check():
-    return {"status": "ok"}
+    from flask import request
+    sid = request.sid
+    if sid in active_clients:
+        active_clients[sid]["last_seen"] = time.time()
+    return {"status": "ok", "paused": inputs_paused}
 
 
 @socketio.on("move")
 def handle_move(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         dx = float(data.get("dx", 0))
         dy = float(data.get("dy", 0))
@@ -364,6 +489,9 @@ def handle_move(data):
 
 @socketio.on("click")
 def handle_click(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         button_name = data.get("button", "left")
         count = int(data.get("count", 1))
@@ -374,6 +502,9 @@ def handle_click(data):
 
 @socketio.on("mouse_down")
 def handle_mouse_down(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         button_name = data.get("button", "left")
         native_mouse_down(button_name)
@@ -383,6 +514,9 @@ def handle_mouse_down(data):
 
 @socketio.on("mouse_up")
 def handle_mouse_up(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         button_name = data.get("button", "left")
         native_mouse_up(button_name)
@@ -392,6 +526,9 @@ def handle_mouse_up(data):
 
 @socketio.on("scroll")
 def handle_scroll(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         dx = float(data.get("dx", 0))
         dy = float(data.get("dy", 0))
@@ -409,6 +546,9 @@ def handle_text(data):
     """
     Type a full string as if from keyboard.
     """
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     ensure_desktop()
     try:
         text = data.get("text", "")
@@ -424,6 +564,9 @@ def handle_key(data):
     Handle single special keys and media keys.
     data: { "name": "enter" | "media_volume_up" | ..., "action": "tap"|"press"|"release" }
     """
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     ensure_desktop()
     try:
         name = data.get("name")
@@ -512,6 +655,9 @@ current_stick_keys = set()
 
 @socketio.on("gamepad_button_down")
 def handle_gamepad_button_down(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         input_code = data.get("input")
         in_type, resolved = resolve_gamepad_input(input_code)
@@ -527,6 +673,9 @@ def handle_gamepad_button_down(data):
 
 @socketio.on("gamepad_button_up")
 def handle_gamepad_button_up(data):
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         input_code = data.get("input")
         in_type, resolved = resolve_gamepad_input(input_code)
@@ -547,6 +696,9 @@ def handle_gamepad_stick_sync(data):
     Releases keys that became inactive and presses newly active keys.
     """
     global current_stick_keys
+    if inputs_paused:
+        return
+    packet_stats["total_tcp"] += 1
     try:
         desired_keys = set(data.get("keys", []))
         to_release = current_stick_keys - desired_keys
