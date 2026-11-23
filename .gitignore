@@ -22,3 +22,6 @@ dist/
 Thumbs.db
 
 .vscode/
+
+# Raw video frame dumps
+docs/reference_ui/
