@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
-import { Colors } from './theme/colors';
+import { CyberTokens } from './theme/cyberTokens';
 import { socketService, ConnectionStatus } from './services/SocketService';
 import { autoConnectService } from './services/AutoConnectService';
 import { hapticsService } from './services/HapticsService';
@@ -21,10 +21,15 @@ import { LoginScreen } from './screens/LoginScreen';
 import { ConnectionGateModal } from './components/ConnectionGateModal';
 import { ServerSwitcherBar } from './components/ServerSwitcherBar';
 import { ServerSwitcherDrawer } from './components/ServerSwitcherDrawer';
+import { BottomDock, BottomNavTab } from './components/BottomDock';
+import { HomeScreen, ControlDeckType } from './screens/HomeScreen';
 import { TrackpadScreen } from './screens/TrackpadScreen';
 import { GamepadScreen } from './screens/GamepadScreen';
 import { KeyboardScreen } from './screens/KeyboardScreen';
 import { MediaScreen } from './screens/MediaScreen';
+import { PresentationScreen } from './screens/PresentationScreen';
+import { ShortcutsScreen } from './screens/ShortcutsScreen';
+import { ShowOnPcScreen } from './screens/ShowOnPcScreen';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -34,7 +39,10 @@ export default function App() {
   const [connectionGateSkipped, setConnectionGateSkipped] = useState(false);
   const [switcherDrawerVisible, setSwitcherDrawerVisible] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'touchpad' | 'gamepad' | 'keyboard' | 'media'>('touchpad');
+  // Navigation State Machine
+  const [bottomTab, setBottomTab] = useState<BottomNavTab>('remote');
+  const [currentDeck, setCurrentDeck] = useState<ControlDeckType | null>(null);
+
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [latency, setLatency] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
@@ -68,7 +76,7 @@ export default function App() {
     };
   }, []);
 
-  const currentAccent = ACCENT_PALETTES[settings.accentTheme] || ACCENT_PALETTES.blue;
+  const currentAccent = ACCENT_PALETTES[settings.accentTheme] || ACCENT_PALETTES.teal;
 
   // 1. Splash Screen Phase
   if (showSplash) {
@@ -85,144 +93,171 @@ export default function App() {
     );
   }
 
-  // 3. Main App Interface
+  // Handle bottom dock tab selection
+  const handleSelectBottomTab = (tab: BottomNavTab) => {
+    if (tab === 'settings') {
+      setSettingsModalVisible(true);
+    } else {
+      setBottomTab(tab);
+      setCurrentDeck(null);
+    }
+  };
+
+  const deckTabs: { id: ControlDeckType; label: string }[] = [
+    { id: 'touchpad', label: 'Trackpad' },
+    { id: 'keyboard', label: 'Keyboard' },
+    { id: 'gamepad', label: 'Gamepad' },
+    { id: 'media', label: 'Media' },
+    { id: 'presentation', label: 'Slides' },
+    { id: 'shortcuts', label: 'Macros' },
+  ];
+
+  // 3. Main Application Hub & Decks
   return (
     <SafeAreaView style={[styles.container, isFullscreen && styles.containerFullscreen]}>
-      <StatusBar hidden={isFullscreen} barStyle="light-content" backgroundColor="#161720" />
+      <StatusBar hidden={isFullscreen} barStyle="light-content" backgroundColor={CyberTokens.bgObsidian} />
 
-      {/* Header - Hidden in Fullscreen */}
-      {!isFullscreen && (
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.headerLeftAndCenter}
-            onPress={() => {
-              hapticsService.light();
-              setSwitcherDrawerVisible(true);
-            }}
-            activeOpacity={0.8}
-            focusable={false}
-          >
-            <View style={styles.appTitle}>
-              <View style={[styles.logoDot, { backgroundColor: currentAccent.primary }]} />
-              <Text style={styles.appTitleText}>Remote Trackpad Pro</Text>
-            </View>
-            <Text
-              style={[
-                styles.statusText,
-                connectionStatus === 'connected' && styles.statusConnected,
-                connectionStatus === 'connecting' && styles.statusConnecting,
-              ]}
-              numberOfLines={1}
-            >
-              {connectionStatus === 'connected'
-                ? `Connected ✔ ${socketService.getServerName() ? `${socketService.getServerName()} ` : ''}${latency > 0 ? `(${latency}ms)` : ''}`
-                : connectionStatus === 'connecting'
-                ? `Connecting${socketService.getServerName() ? ` to ${socketService.getServerName()}...` : '...'}`
-                : 'Disconnected ✖ (Tap to Switch Server)'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Settings Icon Button */}
-          <TouchableOpacity
-            style={styles.settingsHeaderBtn}
-            onPress={() => {
-              hapticsService.light();
-              setSettingsModalVisible(true);
-            }}
-            activeOpacity={0.8}
-            focusable={false}
-          >
-            <Text style={styles.settingsHeaderIcon}>⚙️</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Tabs - Hidden in Fullscreen */}
-      {!isFullscreen && (
-        <View style={styles.tabs}>
-          {(['touchpad', 'gamepad', 'keyboard', 'media'] as const).map((tab) => {
-            const isActive = activeTab === tab;
-            const label =
-              tab === 'touchpad'
-                ? 'Trackpad'
-                : tab === 'gamepad'
-                ? 'Gamepad'
-                : tab === 'keyboard'
-                ? 'Keyboard'
-                : 'Media';
-            return (
-              <TouchableOpacity
-                key={tab}
-                style={[
-                  styles.tabBtn,
-                  isActive && {
-                    backgroundColor: currentAccent.bgSoft,
-                    borderColor: currentAccent.border,
-                  },
-                ]}
-                onPress={() => {
-                  setActiveTab(tab);
-                  hapticsService.light();
-                }}
-                activeOpacity={0.88}
-                focusable={false}
-              >
-                <Text
-                  style={[
-                    styles.tabBtnText,
-                    isActive && {
-                      color: '#ffffff',
-                      fontWeight: '700',
-                    },
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-
-      {/* Persistent Dedicated Server Switcher Bar - Hidden in Fullscreen */}
-      {!isFullscreen && (
-        <ServerSwitcherBar
-          status={connectionStatus}
-          serverName={socketService.getServerName()}
-          serverIp={socketService.getHostIp()}
-          latency={latency}
-          onOpenSwitcher={() => setSwitcherDrawerVisible(true)}
-          accentColor={currentAccent.primary}
-        />
-      )}
-
-      {/* Main Content View */}
+      {/* Main Content Area */}
       <View style={[styles.content, isFullscreen && styles.contentFullscreen]}>
-        {activeTab === 'touchpad' && (
-          <TrackpadScreen
-            isFullscreen={isFullscreen}
-            onToggleFullscreen={toggleFullscreen}
-          />
-        )}
-        {activeTab === 'gamepad' && (
-          <GamepadScreen
-            isFullscreen={isFullscreen}
-            onToggleFullscreen={toggleFullscreen}
-          />
-        )}
-        {activeTab === 'keyboard' && (
-          <KeyboardScreen
-            isFullscreen={isFullscreen}
-            onToggleFullscreen={toggleFullscreen}
-          />
-        )}
-        {activeTab === 'media' && (
-          <MediaScreen
-            isFullscreen={isFullscreen}
-            onToggleFullscreen={toggleFullscreen}
+        {bottomTab === 'remote' ? (
+          currentDeck === null ? (
+            /* Central Command Home Hub */
+            <HomeScreen
+              connectionStatus={connectionStatus}
+              serverName={socketService.getServerName()}
+              serverIp={socketService.getHostIp()}
+              latency={latency}
+              onOpenDeck={(deck) => setCurrentDeck(deck)}
+              onOpenServerSwitcher={() => setSwitcherDrawerVisible(true)}
+              accentColor={currentAccent.primary}
+            />
+          ) : (
+            /* Active Control Deck View */
+            <View style={styles.deckContainer}>
+              {/* Top Quick Deck Switcher & Hub Return Ribbon - Hidden in Fullscreen */}
+              {!isFullscreen && (
+                <View style={styles.deckSwitcherHeader}>
+                  <TouchableOpacity
+                    style={styles.hubReturnBtn}
+                    onPress={() => {
+                      hapticsService.light();
+                      setCurrentDeck(null);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.hubReturnIcon}>❮</Text>
+                    <Text style={styles.hubReturnText}>Hub</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.deckPillsScroll}>
+                    {deckTabs.map((dt) => {
+                      const isActive = currentDeck === dt.id;
+                      return (
+                        <TouchableOpacity
+                          key={dt.id}
+                          style={[
+                            styles.deckPill,
+                            isActive && [
+                              styles.deckPillActive,
+                              { backgroundColor: currentAccent.bgSoft, borderColor: currentAccent.border },
+                            ],
+                          ]}
+                          onPress={() => {
+                            hapticsService.light();
+                            setCurrentDeck(dt.id);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.deckPillText,
+                              isActive && [styles.deckPillTextActive, { color: currentAccent.primary }],
+                            ]}
+                          >
+                            {dt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* Persistent Dedicated Server Switcher Bar - Hidden in Fullscreen */}
+              {!isFullscreen && (
+                <ServerSwitcherBar
+                  status={connectionStatus}
+                  serverName={socketService.getServerName()}
+                  serverIp={socketService.getHostIp()}
+                  latency={latency}
+                  onOpenSwitcher={() => setSwitcherDrawerVisible(true)}
+                  accentColor={currentAccent.primary}
+                />
+              )}
+
+              {/* Render Selected Deck Component */}
+              <View style={styles.deckBody}>
+                {currentDeck === 'touchpad' && (
+                  <TrackpadScreen
+                    isFullscreen={isFullscreen}
+                    onToggleFullscreen={toggleFullscreen}
+                    onBack={() => setCurrentDeck(null)}
+                  />
+                )}
+                {currentDeck === 'keyboard' && (
+                  <KeyboardScreen
+                    isFullscreen={isFullscreen}
+                    onToggleFullscreen={toggleFullscreen}
+                    onBack={() => setCurrentDeck(null)}
+                  />
+                )}
+                {currentDeck === 'gamepad' && (
+                  <GamepadScreen
+                    isFullscreen={isFullscreen}
+                    onToggleFullscreen={toggleFullscreen}
+                  />
+                )}
+                {currentDeck === 'media' && (
+                  <MediaScreen
+                    isFullscreen={isFullscreen}
+                    onToggleFullscreen={toggleFullscreen}
+                  />
+                )}
+                {currentDeck === 'presentation' && (
+                  <PresentationScreen
+                    isFullscreen={isFullscreen}
+                    onToggleFullscreen={toggleFullscreen}
+                    onBack={() => setCurrentDeck(null)}
+                    accentColor={currentAccent.primary}
+                  />
+                )}
+                {currentDeck === 'shortcuts' && (
+                  <ShortcutsScreen
+                    onBack={() => setCurrentDeck(null)}
+                    accentColor={currentAccent.primary}
+                  />
+                )}
+              </View>
+            </View>
+          )
+        ) : (
+          /* Show on PC View */
+          <ShowOnPcScreen
+            serverIp={socketService.getHostIp()}
+            serverName={socketService.getServerName()}
+            accentColor={currentAccent.primary}
           />
         )}
       </View>
+
+      {/* Floating Bottom Navigation Dock (Visible on Home and Show on PC) */}
+      {!isFullscreen && currentDeck === null && (
+        <BottomDock
+          activeTab={bottomTab}
+          onSelectTab={handleSelectBottomTab}
+          accentColor={currentAccent.primary}
+        />
+      )}
 
       {/* Connection Gating Modal (Enforces connection on launch unless skipped) */}
       <ConnectionGateModal
@@ -268,114 +303,85 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0c10',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    backgroundColor: '#161720',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    zIndex: 10,
-  },
-  headerLeftAndCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  settingsHeaderIcon: {
-    fontSize: 16,
-  },
-  appTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-  },
-  logoDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  appTitleText: {
-    fontWeight: '700',
-    fontSize: 15,
-    letterSpacing: 0.3,
-    color: '#f5f5f7',
-  },
-  statusText: {
-    fontSize: 11,
-    marginTop: 2,
-    color: '#8b8d9c',
-  },
-  statusConnected: {
-    color: '#4ade80',
-    fontWeight: '600',
-  },
-  statusConnecting: {
-    color: '#f5f5f7',
-  },
-  tabs: {
-    flexDirection: 'row',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    gap: 6,
-    backgroundColor: '#0f1015',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    zIndex: 10,
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabBtnText: {
-    color: '#8b8d9c',
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  content: {
-    flex: 1,
-    backgroundColor: '#0b0c10',
-    minHeight: 0,
-    overflow: 'hidden',
+    backgroundColor: CyberTokens.bgObsidian,
   },
   containerFullscreen: {
     paddingTop: 0,
-    backgroundColor: '#0b0c10',
+    backgroundColor: CyberTokens.bgObsidian,
+  },
+  content: {
+    flex: 1,
+    backgroundColor: CyberTokens.bgObsidian,
+    minHeight: 0,
+    overflow: 'hidden',
   },
   contentFullscreen: {
     padding: 0,
+  },
+  deckContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: CyberTokens.bgObsidian,
+  },
+  deckSwitcherHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: CyberTokens.bgSurface,
+    borderBottomWidth: 1,
+    borderBottomColor: CyberTokens.borderSubtle,
+    gap: 6,
+  },
+  hubReturnBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: CyberTokens.borderSubtle,
+    gap: 3,
+  },
+  hubReturnIcon: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  hubReturnText: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  deckPillsScroll: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  deckPill: {
+    flex: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 2,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deckPillActive: {
+    borderWidth: 1,
+  },
+  deckPillText: {
+    color: CyberTokens.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  deckPillTextActive: {
+    fontWeight: '800',
+  },
+  deckBody: {
+    flex: 1,
   },
 });

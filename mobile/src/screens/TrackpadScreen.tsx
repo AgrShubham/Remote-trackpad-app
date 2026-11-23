@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   PanResponder,
@@ -9,7 +10,7 @@ import {
   PanResponderGestureState,
   Modal,
 } from 'react-native';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path, Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { audioService } from '../services/AudioService';
@@ -17,11 +18,13 @@ import { audioService } from '../services/AudioService';
 interface TrackpadScreenProps {
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onBack?: () => void;
 }
 
 export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   isFullscreen: propIsFullscreen,
   onToggleFullscreen,
+  onBack,
 }) => {
   const [speed, setSpeed] = useState<number>(1.4);
   const [isDragLocked, setIsDragLocked] = useState<boolean>(false);
@@ -29,6 +32,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   const [rightClickActive, setRightClickActive] = useState<boolean>(false);
   const [localFullscreen, setLocalFullscreen] = useState<boolean>(false);
   const [isSensitivityModalOpen, setIsSensitivityModalOpen] = useState<boolean>(false);
+  const [directText, setDirectText] = useState<string>('');
 
   const isFullscreen = propIsFullscreen !== undefined ? propIsFullscreen : localFullscreen;
   const toggleFullscreen = () => {
@@ -117,6 +121,35 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
       inertiaRaf.current = requestAnimationFrame(loop);
     };
     inertiaRaf.current = requestAnimationFrame(loop);
+  };
+
+  // Center Vertical Scroll Strip PanResponder (single finger direct wheel)
+  const scrollStripLastY = useRef<number>(0);
+  const scrollStripPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        scrollStripLastY.current = evt.nativeEvent.pageY;
+        hapticsService.light();
+      },
+      onPanResponderMove: (evt) => {
+        const delta = scrollStripLastY.current - evt.nativeEvent.pageY;
+        scrollStripLastY.current = evt.nativeEvent.pageY;
+        if (Math.abs(delta) > 0.4) {
+          socketService.scroll(0, delta * 2.2);
+        }
+      },
+    })
+  ).current;
+
+  // Direct Text Input Handler
+  const handleSendDirectText = () => {
+    if (directText.trim()) {
+      socketService.text(directText);
+      setDirectText('');
+      hapticsService.light();
+    }
   };
 
   // Natural Precision Velocity Ballistics
@@ -349,6 +382,23 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
       {/* Top Floating Action Bar (Hidden in Fullscreen) */}
       {!isFullscreen && (
         <View style={styles.topBar}>
+          {/* Back to Hub Button */}
+          {onBack && (
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => {
+                hapticsService.light();
+                onBack();
+              }}
+              activeOpacity={0.8}
+            >
+              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M19 12H5M12 19l-7-7 7-7" />
+              </Svg>
+              <Text style={styles.backBtnText}>Hub</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Floating Sensitivity Pill - Tapping opens real-time scrubber */}
           <TouchableOpacity
             style={styles.sensitivityPill}
@@ -402,6 +452,24 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
         {/* Expansive Touch Motion Zone */}
         <View style={styles.motionZone} {...panResponder.panHandlers}>
+          {/* Dotted Grid Matrix Canvas */}
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+            <Svg width="100%" height="100%">
+              <Defs>
+                <Pattern id="trackpad-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+                  <Circle cx="11" cy="11" r="1.1" fill="rgba(255, 255, 255, 0.08)" />
+                </Pattern>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#trackpad-dots)" />
+            </Svg>
+          </View>
+
+          {/* Minimalist In-Canvas Gesture Guide Hints */}
+          <View style={styles.gestureHintBox} pointerEvents="none">
+            <Text style={styles.gestureHintText}>• 1 Finger: Move & Tap Click</Text>
+            <Text style={styles.gestureHintText}>• 2 Fingers: Drag Scroll & Right-Click</Text>
+          </View>
+
           {/* Dragging Pill Indicator */}
           {isDragLocked && (
             <View style={styles.dragPill} pointerEvents="none">
@@ -410,7 +478,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           )}
         </View>
 
-        {/* Seamless Laptop-Style Bottom Click Zones (Integrated into surface) */}
+        {/* Seamless Laptop-Style Bottom Click Zones with Center Scroll Strip */}
         <View style={[styles.seamlessClickBar, isFullscreen && styles.seamlessClickBarFullscreen]}>
           {/* Left Click Zone */}
           <TouchableOpacity
@@ -439,8 +507,13 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
             </Text>
           </TouchableOpacity>
 
-          {/* Whisper-Thin Hairline Divider */}
-          <View style={styles.seamlessDivider} pointerEvents="none" />
+          {/* Center Vertical Scroll Slider Strip */}
+          <View style={styles.centerScrollStrip} {...scrollStripPanResponder.panHandlers}>
+            <Svg width={14} height={18} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5" />
+            </Svg>
+            <Text style={styles.scrollStripText}>SCROLL</Text>
+          </View>
 
           {/* Right Click Zone */}
           <TouchableOpacity
@@ -469,6 +542,29 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Docked Direct Text Input Bar */}
+      {!isFullscreen && (
+        <View style={styles.dockedInputBar}>
+          <TextInput
+            style={styles.dockedTextInput}
+            placeholder="Type here to send directly to PC..."
+            placeholderTextColor="#64748b"
+            value={directText}
+            onChangeText={setDirectText}
+            onSubmitEditing={handleSendDirectText}
+            returnKeyType="send"
+          />
+          <TouchableOpacity
+            style={[styles.dockedSendBtn, !directText.trim() && styles.dockedSendBtnDisabled]}
+            onPress={handleSendDirectText}
+            disabled={!directText.trim()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dockedSendBtnText}>Send ↵</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Expandable Sensitivity Scrubber Modal */}
       <Modal
@@ -610,6 +706,22 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     flexShrink: 0,
   },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  backBtnText: {
+    color: '#e5e5ea',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   sensitivityPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -670,6 +782,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+  },
+  gestureHintBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  gestureHintText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+    marginVertical: 1,
   },
   dragPill: {
     position: 'absolute',
@@ -756,6 +884,57 @@ const styles = StyleSheet.create({
   },
   seamlessClickTextActive: {
     color: '#60a5fa',
+    fontWeight: '700',
+  },
+  centerScrollStrip: {
+    width: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  scrollStripText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#60a5fa',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+
+  // Docked Direct Text Input Bar
+  dockedInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#12141f',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 8,
+  },
+  dockedTextInput: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 13,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  dockedSendBtn: {
+    backgroundColor: '#14b8a6',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  dockedSendBtnDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  dockedSendBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
     fontWeight: '700',
   },
 

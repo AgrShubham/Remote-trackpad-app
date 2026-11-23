@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  PanResponder,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { Keycap } from '../components/Keycap';
@@ -15,11 +16,13 @@ import { Keycap } from '../components/Keycap';
 interface KeyboardScreenProps {
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onBack?: () => void;
 }
 
 export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
   isFullscreen,
   onToggleFullscreen,
+  onBack,
 }) => {
   const [typedText, setTypedText] = useState('');
   const [activeDeck, setActiveDeck] = useState<'qwerty' | 'nav'>('qwerty');
@@ -28,6 +31,44 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
   const [isCtrlLatched, setIsCtrlLatched] = useState(false);
   const [isAltLatched, setIsAltLatched] = useState(false);
   const [isQuickTextOpen, setIsQuickTextOpen] = useState(false);
+  const [showMiniTouchpad, setShowMiniTouchpad] = useState(true);
+
+  // Mini-Touchpad gesture handler
+  const miniLastX = useRef(0);
+  const miniLastY = useRef(0);
+  const miniTouchStartTime = useRef(0);
+  const miniHasMoved = useRef(false);
+
+  const miniTouchpadPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        miniLastX.current = evt.nativeEvent.pageX;
+        miniLastY.current = evt.nativeEvent.pageY;
+        miniTouchStartTime.current = Date.now();
+        miniHasMoved.current = false;
+      },
+      onPanResponderMove: (evt) => {
+        const dx = evt.nativeEvent.pageX - miniLastX.current;
+        const dy = evt.nativeEvent.pageY - miniLastY.current;
+        miniLastX.current = evt.nativeEvent.pageX;
+        miniLastY.current = evt.nativeEvent.pageY;
+
+        if (Math.abs(dx) > 0.6 || Math.abs(dy) > 0.6) {
+          miniHasMoved.current = true;
+          socketService.move(dx * 1.6, dy * 1.6);
+        }
+      },
+      onPanResponderRelease: () => {
+        const duration = Date.now() - miniTouchStartTime.current;
+        if (!miniHasMoved.current && duration < 250) {
+          socketService.click('left');
+          hapticsService.light();
+        }
+      },
+    })
+  ).current;
 
   const handleSendText = () => {
     if (typedText) {
@@ -136,6 +177,23 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
     <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
       {/* Top Utility Ribbon */}
       <View style={styles.utilityRibbon}>
+        {/* Back to Hub Button */}
+        {onBack && (
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => {
+              hapticsService.light();
+              onBack();
+            }}
+            activeOpacity={0.8}
+          >
+            <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M19 12H5M12 19l-7-7 7-7" />
+            </Svg>
+            <Text style={styles.backBtnText}>Hub</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Essential PC Utility Keycaps */}
         <View style={styles.utilityKeyGroup}>
           <Keycap label="Esc" code="esc" widthFactor={1.1} height={36} type="utility" accentColor="#f87171" onPress={handleKeyPress} />
@@ -155,6 +213,21 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
 
         {/* Right Action Controls */}
         <View style={styles.utilityActionGroup}>
+          {/* Mini-Touchpad Toggle Pill */}
+          <TouchableOpacity
+            style={[styles.actionPill, showMiniTouchpad && styles.actionPillActive]}
+            onPress={() => {
+              setShowMiniTouchpad(!showMiniTouchpad);
+              hapticsService.light();
+            }}
+            activeOpacity={0.8}
+            focusable={false}
+          >
+            <Text style={[styles.actionPillText, showMiniTouchpad && styles.actionPillTextActive]}>
+              🖱️ Pad
+            </Text>
+          </TouchableOpacity>
+
           {/* Quick Text Drawer Button */}
           <TouchableOpacity
             style={[styles.actionPill, isQuickTextOpen && styles.actionPillActive]}
@@ -202,6 +275,74 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
           )}
         </View>
       </View>
+
+      {/* Integrated Mini-Touchpad Surface */}
+      {showMiniTouchpad && !isFullscreen && (
+        <View style={styles.miniTouchpadContainer}>
+          <View style={styles.miniTouchSurface} {...miniTouchpadPanResponder.panHandlers}>
+            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+              <Svg width="100%" height="100%">
+                <Defs>
+                  <Pattern id="mini-touchpad-dots" width="16" height="16" patternUnits="userSpaceOnUse">
+                    <Circle cx="8" cy="8" r="1.1" fill="rgba(255, 255, 255, 0.08)" />
+                  </Pattern>
+                </Defs>
+                <Rect width="100%" height="100%" fill="url(#mini-touchpad-dots)" />
+              </Svg>
+            </View>
+            <View pointerEvents="none">
+              <Text style={styles.miniTouchHint}>
+                Mini-Touchpad • Drag cursor • Tap to click
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.miniSideBar}>
+            <TouchableOpacity
+              style={styles.miniSideBtn}
+              onPress={() => {
+                socketService.click('left');
+                hapticsService.light();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.miniSideBtnText}>Left</Text>
+            </TouchableOpacity>
+            <View style={styles.miniScrollCol}>
+              <TouchableOpacity
+                style={styles.miniScrollBtn}
+                onPress={() => {
+                  socketService.scroll(0, 15);
+                  hapticsService.light();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.miniScrollBtnText}>▲</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.miniScrollBtn}
+                onPress={() => {
+                  socketService.scroll(0, -15);
+                  hapticsService.light();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.miniScrollBtnText}>▼</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.miniSideBtn}
+              onPress={() => {
+                socketService.click('right');
+                hapticsService.light();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.miniSideBtnText}>Right</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Expandable Quick-Text Field Drawer */}
       {isQuickTextOpen && (
@@ -473,6 +614,83 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     marginBottom: 4,
     width: '100%',
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    marginRight: 4,
+  },
+  backBtnText: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  miniTouchpadContainer: {
+    flexDirection: 'row',
+    height: 84,
+    backgroundColor: '#12141f',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  miniTouchSurface: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    backgroundColor: '#0d0f17',
+  },
+  miniTouchHint: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  miniSideBar: {
+    width: 90,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#161824',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  miniSideBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+  },
+  miniSideBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+  },
+  miniScrollCol: {
+    width: 26,
+    flexDirection: 'column',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  miniScrollBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  },
+  miniScrollBtnText: {
+    fontSize: 9,
+    color: '#60a5fa',
+    fontWeight: '700',
   },
   utilityKeyGroup: {
     flexDirection: 'row',

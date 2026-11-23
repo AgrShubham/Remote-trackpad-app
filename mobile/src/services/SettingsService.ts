@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import KeepAwake from 'react-native-keep-awake';
 
 export type HapticIntensity = 'subtle' | 'medium' | 'strong';
-export type AccentTheme = 'blue' | 'emerald' | 'purple' | 'amber' | 'crimson';
+export type AccentTheme = 'teal' | 'blue' | 'emerald' | 'purple' | 'amber' | 'crimson';
 
 export interface AppSettings {
   keepAwake: boolean;
@@ -19,7 +19,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keepAwake: true,
   hapticsEnabled: true,
   hapticsIntensity: 'medium',
-  accentTheme: 'blue',
+  accentTheme: 'teal',
   preferUdp: true,
   autoReconnect: true,
 };
@@ -28,6 +28,13 @@ export const ACCENT_PALETTES: Record<
   AccentTheme,
   { name: string; primary: string; glow: string; border: string; bgSoft: string }
 > = {
+  teal: {
+    name: 'Cyber Teal',
+    primary: '#14b8a6',
+    glow: 'rgba(20, 184, 166, 0.45)',
+    border: 'rgba(20, 184, 166, 0.7)',
+    bgSoft: 'rgba(20, 184, 166, 0.18)',
+  },
   blue: {
     name: 'Cobalt Blue',
     primary: '#3b82f6',
