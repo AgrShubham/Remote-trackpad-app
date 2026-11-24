@@ -196,9 +196,9 @@ export const ServerSwitcherDrawer: React.FC<ServerSwitcherDrawerProps> = ({
                     >
                       <View style={styles.hostLeft}>
                         <Text style={styles.hostEmoji}>🖥️</Text>
-                        <View>
-                          <Text style={styles.hostTitle}>{host.name}</Text>
-                          <Text style={styles.hostSubtitle}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.hostTitle} numberOfLines={1}>{host.name}</Text>
+                          <Text style={styles.hostSubtitle} numberOfLines={1}>
                             {host.ip}:{host.port} • UDP {host.udpPort || 5002}
                           </Text>
                         </View>

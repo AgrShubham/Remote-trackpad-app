@@ -150,30 +150,37 @@ export const ConnectionGateModal: React.FC<ConnectionGateModalProps> = ({
                 {hosts.map((host) => {
                   const isThisConnecting = connectingIp === host.ip && status === 'connecting';
                   return (
-                    <TouchableOpacity
-                      key={`${host.ip}:${host.port}`}
-                      style={styles.hostItem}
-                      onPress={() => handleConnect(host)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.hostLeft}>
+                    <View key={`${host.ip}:${host.port}`} style={styles.hostCard}>
+                      <View style={styles.hostTopRow}>
                         <Text style={styles.hostIcon}>🖥️</Text>
-                        <View>
-                          <Text style={styles.hostName}>{host.name}</Text>
-                          <Text style={styles.hostIp}>
+                        <View style={styles.hostInfoCol}>
+                          <Text style={styles.hostName} numberOfLines={1}>
+                            {host.name}
+                          </Text>
+                          <Text style={styles.hostIp} numberOfLines={1}>
                             {host.ip}:{host.port} • UDP {host.udpPort || 5002}
                           </Text>
                         </View>
                       </View>
 
-                      <View style={styles.connectPill}>
+                      <TouchableOpacity
+                        style={[
+                          styles.connectBtnBottom,
+                          isThisConnecting && styles.connectBtnConnecting,
+                        ]}
+                        onPress={() => handleConnect(host)}
+                        activeOpacity={0.85}
+                      >
                         {isThisConnecting ? (
-                          <ActivityIndicator size="small" color="#ffffff" />
+                          <View style={styles.connectingRow}>
+                            <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 6 }} />
+                            <Text style={styles.connectBtnBottomText}>Connecting...</Text>
+                          </View>
                         ) : (
-                          <Text style={styles.connectPillText}>Connect</Text>
+                          <Text style={styles.connectBtnBottomText}>Connect</Text>
                         )}
-                      </View>
-                    </TouchableOpacity>
+                      </TouchableOpacity>
+                    </View>
                   );
                 })}
               </ScrollView>
@@ -302,50 +309,65 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   hostsScroll: {
-    maxHeight: 160,
+    maxHeight: 220,
   },
-  hostItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  hostCard: {
     backgroundColor: '#171a24',
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.07)',
-    marginBottom: 8,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 10,
   },
-  hostLeft: {
+  hostTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    marginBottom: 10,
   },
   hostIcon: {
-    fontSize: 22,
+    fontSize: 24,
     marginRight: 10,
   },
+  hostInfoCol: {
+    flex: 1,
+  },
   hostName: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: '#ffffff',
+    letterSpacing: 0.2,
   },
   hostIp: {
     fontSize: 11,
     color: '#8b8d9c',
-    marginTop: 1,
+    marginTop: 2,
   },
-  connectPill: {
+  connectBtnBottom: {
+    width: '100%',
     backgroundColor: '#2563eb',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 8,
-    minWidth: 70,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  connectPillText: {
+  connectBtnConnecting: {
+    backgroundColor: '#1d4ed8',
+  },
+  connectingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectBtnBottomText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   skipButton: {
     width: '100%',
