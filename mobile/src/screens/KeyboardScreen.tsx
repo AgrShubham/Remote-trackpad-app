@@ -11,6 +11,7 @@ import {
 import Svg, { Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
 import { Keycap } from '../components/Keycap';
 
 interface KeyboardScreenProps {
@@ -24,6 +25,7 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
   onToggleFullscreen,
   onBack,
 }) => {
+  const { isDark, tokens } = useTheme();
   const [typedText, setTypedText] = useState('');
   const [activeDeck, setActiveDeck] = useState<'qwerty' | 'nav'>('qwerty');
   const [isShiftActive, setIsShiftActive] = useState(false);
@@ -329,16 +331,16 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
   };
 
   return (
-    <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }, isFullscreen && styles.containerFullscreen]}>
       {/* ================= 1. UPPER PRECISION TRACKPAD (flex: 1) ================= */}
-      <View style={styles.trackpadSection}>
-        <View style={styles.touchSurface} {...trackpadPanResponder.panHandlers}>
+      <View style={[styles.trackpadSection, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}>
+        <View style={[styles.touchSurface, { backgroundColor: tokens.bgSurface }]} {...trackpadPanResponder.panHandlers}>
           {/* Subtle Dot Matrix Pattern */}
           <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
             <Svg width="100%" height="100%">
               <Defs>
                 <Pattern id="kb-trackpad-dots" width="16" height="16" patternUnits="userSpaceOnUse">
-                  <Circle cx="8" cy="8" r="1.1" fill="rgba(255, 255, 255, 0.08)" />
+                  <Circle cx="8" cy="8" r="1.1" fill={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'} />
                 </Pattern>
               </Defs>
               <Rect width="100%" height="100%" fill="url(#kb-trackpad-dots)" />
@@ -346,15 +348,15 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
           </View>
 
           {/* Centered Ergonomic Gesture Guide */}
-          <View style={styles.gestureHintBadge} pointerEvents="none">
-            <Text style={styles.gestureHintText}>
+          <View style={[styles.gestureHintBadge, { backgroundColor: isDark ? 'rgba(18, 20, 31, 0.85)' : 'rgba(255, 255, 255, 0.90)', borderColor: tokens.borderSubtle }]} pointerEvents="none">
+            <Text style={[styles.gestureHintText, { color: tokens.textSecondary }]}>
               • 1 Finger: Move & Tap Click  • 2 Fingers: Drag Scroll & Right-Click
             </Text>
           </View>
         </View>
 
         {/* Integrated Trackpad Action Strip (Click buttons + Vertical Scroll Wheel + Speed) */}
-        <View style={styles.trackpadActionStrip}>
+        <View style={[styles.trackpadActionStrip, { backgroundColor: tokens.cardElevated, borderTopColor: tokens.borderSubtle }]}>
           <TouchableOpacity
             style={[styles.clickBtn, leftActive && styles.clickBtnActive]}
             onPressIn={() => {
@@ -460,9 +462,16 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
       {isQuickTextOpen && (
         <View style={styles.quickTextDrawer}>
           <TextInput
-            style={styles.textInput}
+            style={[
+              styles.textInput,
+              {
+                backgroundColor: tokens.cardBase,
+                borderColor: tokens.borderSubtle,
+                color: tokens.textWhite,
+              },
+            ]}
             placeholder="Type or dictate text to send to PC..."
-            placeholderTextColor="#64748b"
+            placeholderTextColor={tokens.textMuted}
             value={typedText}
             onChangeText={setTypedText}
             onSubmitEditing={handleSendText}
@@ -480,7 +489,15 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
       )}
 
       {/* ================= 3. BOTTOM-DOCKED GBOARD KEYBOARD CHASSIS ================= */}
-      <View style={styles.keyboardChassis}>
+      <View
+        style={[
+          styles.keyboardChassis,
+          {
+            backgroundColor: isDark ? '#0e1017' : '#e2e8f0',
+            borderColor: tokens.borderSubtle,
+          },
+        ]}
+      >
         {activeDeck === 'qwerty' ? (
           <>
             {/* Row 1: Numbers & Symbols */}

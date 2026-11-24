@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
 import { ConcentricStick } from '../components/ConcentricStick';
 import { CloverDpad } from '../components/CloverDpad';
 import { RebindModal, ButtonBinding } from '../components/RebindModal';
@@ -118,6 +119,7 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
   isFullscreen,
   onToggleFullscreen,
 }) => {
+  const { isDark, tokens } = useTheme();
   const [preset, setPreset] = useState<GamepadPreset>('xbox');
   const [isPresetModalVisible, setIsPresetModalVisible] = useState<boolean>(false);
   const [labelMode, setLabelMode] = useState<0 | 1 | 2>(0); // 0: Buttons, 1: Actions, 2: Keys
@@ -616,9 +618,9 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
   const currentPresetMeta = GAMEPAD_PRESETS.find((p) => p.id === preset) || GAMEPAD_PRESETS[0];
 
   return (
-    <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }, isFullscreen && styles.containerFullscreen]}>
       {/* ================= HEADER CONTROLLER TOOLBAR ================= */}
-      <View style={styles.headerToolbar}>
+      <View style={[styles.headerToolbar, { backgroundColor: tokens.bgSurface, borderBottomColor: tokens.borderSubtle }]}>
         <View style={styles.headerLeftGroup}>
           {/* Preset Selector Pill */}
           <TouchableOpacity

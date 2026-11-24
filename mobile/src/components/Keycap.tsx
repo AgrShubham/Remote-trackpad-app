@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { audioService } from '../services/AudioService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
 
 interface KeycapProps {
   label: string;
@@ -37,6 +38,7 @@ export const Keycap: React.FC<KeycapProps> = ({
   onPress,
   onLongPress,
 }) => {
+  const { isDark } = useTheme();
   const [isPressed, setIsPressed] = useState(false);
 
   const handlePressIn = () => {
@@ -61,7 +63,13 @@ export const Keycap: React.FC<KeycapProps> = ({
     <TouchableOpacity
       style={[
         styles.keyContainer,
-        { flex: widthFactor, height },
+        {
+          flex: widthFactor,
+          height,
+          backgroundColor: isDark ? '#12141c' : '#cbd5e1',
+          borderBottomColor: isDark ? '#090a0f' : '#94a3b8',
+          shadowOpacity: isDark ? 0.55 : 0.15,
+        },
         isEnterKey && styles.keyContainerEnter,
         isLatched && styles.keyContainerLatched,
         isPressed && styles.keyPressed,
@@ -76,12 +84,18 @@ export const Keycap: React.FC<KeycapProps> = ({
       <View
         style={[
           styles.keyFace,
-          isDarkKey && styles.keyFaceDark,
+          {
+            backgroundColor: isDark ? '#232635' : '#ffffff',
+            borderTopColor: isDark ? 'rgba(255, 255, 255, 0.18)' : '#ffffff',
+            borderLeftColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+            borderRightColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.1)',
+          },
+          isDarkKey && [styles.keyFaceDark, { backgroundColor: isDark ? '#1a1c26' : '#f1f5f9' }],
           isEnterKey && styles.keyFaceEnter,
-          isSpacebar && styles.keyFaceSpacebar,
+          isSpacebar && [styles.keyFaceSpacebar, { backgroundColor: isDark ? '#262939' : '#ffffff' }],
           isLatched && styles.keyFaceLatched,
-          isPressed && styles.keyFacePressed,
-          isPressed && isDarkKey && styles.keyFaceDarkPressed,
+          isPressed && [styles.keyFacePressed, { backgroundColor: isDark ? '#1c1e2b' : '#e2e8f0' }],
+          isPressed && isDarkKey && [styles.keyFaceDarkPressed, { backgroundColor: isDark ? '#14151e' : '#cbd5e1' }],
           isPressed && isEnterKey && styles.keyFaceEnterPressed,
         ]}
       >
@@ -93,14 +107,15 @@ export const Keycap: React.FC<KeycapProps> = ({
         {/* Dual-Legend Characters (Number + Shift Symbol) */}
         {subLabel ? (
           <View style={styles.dualLabelContainer}>
-            <Text style={[styles.subLabelText, isLatched && styles.textLatched]}>{subLabel}</Text>
-            <Text style={[styles.mainLabelText, isLatched && styles.textLatched]}>{label}</Text>
+            <Text style={[styles.subLabelText, { color: isDark ? '#60a5fa' : '#2563eb' }, isLatched && styles.textLatched]}>{subLabel}</Text>
+            <Text style={[styles.mainLabelText, { color: isDark ? '#f8fafc' : '#0f172a' }, isLatched && styles.textLatched]}>{label}</Text>
           </View>
         ) : (
           <Text
             style={[
               styles.labelText,
-              isDarkKey && styles.labelTextDark,
+              { color: isDark ? '#f8fafc' : '#0f172a' },
+              isDarkKey && [styles.labelTextDark, { color: isDark ? '#cbd5e1' : '#334155' }],
               isEnterKey && styles.labelTextEnter,
               accentColor && { color: accentColor },
               widthFactor > 1.3 && styles.specialLabelText,
@@ -114,7 +129,7 @@ export const Keycap: React.FC<KeycapProps> = ({
 
         {/* Tactile Center Indicator for Spacebar */}
         {isSpacebar && (
-          <View style={styles.spacebarDash} />
+          <View style={[styles.spacebarDash, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.20)' }]} />
         )}
       </View>
     </TouchableOpacity>

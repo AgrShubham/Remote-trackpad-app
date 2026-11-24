@@ -13,6 +13,7 @@ import {
   AppSettings,
   HapticIntensity,
   AccentTheme,
+  ThemeMode,
   ACCENT_PALETTES,
 } from '../services/SettingsService';
 import { hapticsService } from '../services/HapticsService';
@@ -312,6 +313,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       ]}
                     />
                   </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            {/* Section 2.5: Appearance & Theme Mode */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🌓 APPEARANCE & THEME</Text>
+
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingTextCol}>
+                    <Text style={styles.settingLabel}>App Theme</Text>
+                    <Text style={styles.settingDesc}>
+                      Switch between Obsidian Dark, Crisp Studio Light, or System
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.segmentedRow}>
+                  {[
+                    { mode: 'dark' as ThemeMode, label: '🌙 Dark' },
+                    { mode: 'light' as ThemeMode, label: '☀️ Light' },
+                    { mode: 'system' as ThemeMode, label: '📱 Auto' },
+                  ].map((item) => {
+                    const isSelected = (settings.themeMode || 'dark') === item.mode;
+                    return (
+                      <TouchableOpacity
+                        key={item.mode}
+                        style={[
+                          styles.segmentBtn,
+                          isSelected && {
+                            backgroundColor: currentAccent.bgSoft,
+                            borderColor: currentAccent.primary,
+                          },
+                        ]}
+                        onPress={() => {
+                          hapticsService.light();
+                          settingsService.updateSetting('themeMode', item.mode);
+                        }}
+                        focusable={false}
+                        activeOpacity={0.85}
+                      >
+                        <Text
+                          style={[
+                            styles.segmentBtnText,
+                            isSelected && {
+                              color: currentAccent.primary,
+                              fontWeight: '700',
+                            },
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
             </View>

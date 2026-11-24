@@ -1,5 +1,5 @@
-export const CyberTokens = {
-  // Backgrounds & Surfaces
+export const DarkTokens = {
+  // Backgrounds & Surfaces (Cyber Dark)
   bgObsidian: '#07080b',
   bgSurface: '#0d0f17',
   cardBase: '#12141f',
@@ -47,3 +47,56 @@ export const CyberTokens = {
   radiusPill: 9999,
 };
 
+export const LightTokens = {
+  // Backgrounds & Surfaces (Crisp Studio Light)
+  bgObsidian: '#f8fafc', // Crisp Slate 50 background
+  bgSurface: '#ffffff',
+  cardBase: '#ffffff',
+  cardElevated: '#f1f5f9', // Slate 100
+  cardHighlight: '#e2e8f0', // Slate 200
+
+  // Accents (Adjusted for high legibility on light background)
+  teal: '#0d9488',
+  tealGlow: 'rgba(13, 148, 136, 0.25)',
+  tealSoft: 'rgba(13, 148, 136, 0.12)',
+  cyan: '#0891b2',
+  purple: '#7c3aed',
+  purpleSoft: 'rgba(124, 58, 237, 0.12)',
+  blue: '#2563eb',
+  emerald: '#059669',
+  amber: '#d97706',
+  crimson: '#dc2626',
+
+  // Status Indicators
+  statusConnected: '#059669',
+  statusConnecting: '#d97706',
+  statusDisconnected: '#dc2626',
+
+  // Borders & Glows
+  borderSubtle: 'rgba(0, 0, 0, 0.08)',
+  borderLight: 'rgba(0, 0, 0, 0.14)',
+  borderTeal: 'rgba(13, 148, 136, 0.4)',
+  glowTeal: 'rgba(13, 148, 136, 0.20)',
+
+  // Text Hierarchy
+  textWhite: '#0f172a', // Deep Slate 900 for primary text in light mode!
+  textSecondary: '#475569', // Slate 600
+  textMuted: '#64748b', // Slate 500
+  textDim: '#94a3b8', // Slate 400
+
+  // Tactile Grid / Dotted Canvas
+  dotColor: 'rgba(0, 0, 0, 0.10)',
+  dotActive: 'rgba(13, 148, 136, 0.4)',
+
+  // Border Radii
+  radiusSm: 8,
+  radiusMd: 14,
+  radiusLg: 20,
+  radiusXl: 26,
+  radiusPill: 9999,
+};
+
+export const getThemeTokens = (isDark: boolean) => (isDark ? DarkTokens : LightTokens);
+
+// Backward-compatible export defaulting to dark mode
+export const CyberTokens = DarkTokens;

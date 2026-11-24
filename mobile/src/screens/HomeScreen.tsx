@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { CyberTokens } from '../theme/cyberTokens';
+import { useTheme } from '../theme/ThemeContext';
 import { ConnectionStatus, socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 
@@ -37,8 +38,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   latency,
   onOpenDeck,
   onOpenServerSwitcher,
-  accentColor = CyberTokens.teal,
+  accentColor: propAccentColor,
 }) => {
+  const { isDark, tokens, toggleTheme, accent } = useTheme();
+  const accentColor = propAccentColor || accent.primary;
   const isConnected = connectionStatus === 'connected';
   const isConnecting = connectionStatus === 'connecting';
 
@@ -53,29 +56,56 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={CyberTokens.bgObsidian} />
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={tokens.bgObsidian}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top App Branding Bar */}
+        {/* Top App Branding Bar with Instant Theme Switcher */}
         <View style={styles.topBar}>
           <View style={styles.titleRow}>
             <View style={[styles.brandDot, { backgroundColor: accentColor }]} />
-            <Text style={styles.brandTitle}>Remote Mouse Pro</Text>
+            <Text style={[styles.brandTitle, { color: tokens.textWhite }]}>Remote Mouse Pro</Text>
             <View style={[styles.proBadge, { borderColor: `${accentColor}60` }]}>
               <Text style={[styles.proBadgeText, { color: accentColor }]}>TURBO UDP</Text>
             </View>
           </View>
+
+          {/* Quick 1-Tap Theme Switcher Pill */}
+          <TouchableOpacity
+            style={[
+              styles.themeToggleBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                borderColor: tokens.borderSubtle,
+              },
+            ]}
+            onPress={() => {
+              hapticsService.light();
+              toggleTheme();
+            }}
+            activeOpacity={0.8}
+            focusable={false}
+            accessibilityLabel="Switch light and dark theme"
+          >
+            <Text style={styles.themeToggleEmoji}>{isDark ? '☀️' : '🌙'}</Text>
+            <Text style={[styles.themeToggleLabel, { color: tokens.textSecondary }]}>
+              {isDark ? 'Light' : 'Dark'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Hero Connection Card */}
         <TouchableOpacity
           style={[
             styles.heroCard,
+            { backgroundColor: tokens.cardBase },
             isConnected ? styles.heroCardConnected : styles.heroCardDisconnected,
-            { borderColor: isConnected ? `${accentColor}40` : CyberTokens.borderSubtle },
+            { borderColor: isConnected ? `${accentColor}40` : tokens.borderSubtle },
           ]}
           onPress={() => {
             hapticsService.light();
@@ -93,7 +123,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   !isConnected && !isConnecting && [styles.dotDisconnected, { backgroundColor: CyberTokens.statusDisconnected }],
                 ]}
               />
-              <Text style={styles.heroStatusBadge}>
+              <Text style={[styles.heroStatusBadge, { color: tokens.textSecondary }]}>
                 {isConnected
                   ? 'ONLINE • ZERO-LAG UDP'
                   : isConnecting
@@ -103,7 +133,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </View>
 
             {isConnected && (
-              <View style={styles.latencyTag}>
+              <View style={[styles.latencyTag, { borderColor: tokens.borderSubtle }]}>
                 <Text
                   style={[
                     styles.latencyTagText,
@@ -117,12 +147,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </View>
 
           <View style={styles.heroBody}>
-            <Text style={styles.heroServerTitle} numberOfLines={1}>
+            <Text style={[styles.heroServerTitle, { color: tokens.textWhite }]} numberOfLines={1}>
               {isConnected
                 ? serverName || serverIp || 'Connected PC'
                 : 'No PC Connected'}
             </Text>
-            <Text style={styles.heroServerSubtitle} numberOfLines={1}>
+            <Text style={[styles.heroServerSubtitle, { color: tokens.textSecondary }]} numberOfLines={1}>
               {isConnected
                 ? `Active Target: ${serverIp || 'Localhost'}:${socketService.getPort()}`
                 : 'Tap here to scan network or switch host PC'}
@@ -140,15 +170,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
         {/* Section Title: Control Decks */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Control Decks</Text>
-          <Text style={styles.sectionSubtitle}>Select an interface to pilot your PC</Text>
+          <Text style={[styles.sectionTitle, { color: tokens.textWhite }]}>Control Decks</Text>
+          <Text style={[styles.sectionSubtitle, { color: tokens.textMuted }]}>Select an interface to pilot your PC</Text>
         </View>
 
         {/* Bento Grid: 2 columns */}
         <View style={styles.bentoGrid}>
           {/* 1. Touchpad Deck */}
           <TouchableOpacity
-            style={styles.bentoCard}
+            style={[styles.bentoCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}
             onPress={() => handleDeckPress('touchpad')}
             activeOpacity={0.8}
           >
@@ -158,18 +188,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Path d="M12 15v6M3 15h18" stroke={accentColor} strokeWidth="1.8" />
               </Svg>
             </View>
-            <Text style={styles.bentoTitle}>Touchpad</Text>
-            <Text style={styles.bentoDescription}>
+            <Text style={[styles.bentoTitle, { color: tokens.textWhite }]}>Touchpad</Text>
+            <Text style={[styles.bentoDescription, { color: tokens.textSecondary }]}>
               Precision trackpad, scroll slider & direct typing
             </Text>
-            <View style={styles.bentoPillTag}>
+            <View style={[styles.bentoPillTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
               <Text style={[styles.bentoPillText, { color: accentColor }]}>Instant UDP</Text>
             </View>
           </TouchableOpacity>
 
           {/* 2. Keyboard Deck */}
           <TouchableOpacity
-            style={styles.bentoCard}
+            style={[styles.bentoCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}
             onPress={() => handleDeckPress('keyboard')}
             activeOpacity={0.8}
           >
@@ -179,18 +209,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Path d="M6 9h1M10 9h1M14 9h1M18 9h1M6 13h1M10 13h4M17 13h1" stroke={CyberTokens.blue} strokeWidth="2" strokeLinecap="round" />
               </Svg>
             </View>
-            <Text style={styles.bentoTitle}>Keyboard</Text>
-            <Text style={styles.bentoDescription}>
+            <Text style={[styles.bentoTitle, { color: tokens.textWhite }]}>Keyboard</Text>
+            <Text style={[styles.bentoDescription, { color: tokens.textSecondary }]}>
               Full QWERTY layout with Mini-Touchpad
             </Text>
-            <View style={styles.bentoPillTag}>
+            <View style={[styles.bentoPillTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
               <Text style={[styles.bentoPillText, { color: CyberTokens.blue }]}>PC Keys</Text>
             </View>
           </TouchableOpacity>
 
           {/* 3. Gamepad Deck */}
           <TouchableOpacity
-            style={styles.bentoCard}
+            style={[styles.bentoCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}
             onPress={() => handleDeckPress('gamepad')}
             activeOpacity={0.8}
           >
@@ -200,18 +230,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Path d="M6 12h4M8 10v4M15 11h.01M17 13h.01" stroke={CyberTokens.amber} strokeWidth="2" strokeLinecap="round" />
               </Svg>
             </View>
-            <Text style={styles.bentoTitle}>Gamepad</Text>
-            <Text style={styles.bentoDescription}>
+            <Text style={[styles.bentoTitle, { color: tokens.textWhite }]}>Gamepad</Text>
+            <Text style={[styles.bentoDescription, { color: tokens.textSecondary }]}>
               Dual analog sticks, D-pad & shoulder triggers
             </Text>
-            <View style={styles.bentoPillTag}>
+            <View style={[styles.bentoPillTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
               <Text style={[styles.bentoPillText, { color: CyberTokens.amber }]}>Console Feel</Text>
             </View>
           </TouchableOpacity>
 
           {/* 4. Media Deck */}
           <TouchableOpacity
-            style={styles.bentoCard}
+            style={[styles.bentoCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}
             onPress={() => handleDeckPress('media')}
             activeOpacity={0.8}
           >
@@ -220,18 +250,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Path d="M11 5L6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" stroke={CyberTokens.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             </View>
-            <Text style={styles.bentoTitle}>Media Remote</Text>
-            <Text style={styles.bentoDescription}>
+            <Text style={[styles.bentoTitle, { color: tokens.textWhite }]}>Media Remote</Text>
+            <Text style={[styles.bentoDescription, { color: tokens.textSecondary }]}>
               Volume slider, playback, scrubbing & mute
             </Text>
-            <View style={styles.bentoPillTag}>
+            <View style={[styles.bentoPillTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
               <Text style={[styles.bentoPillText, { color: CyberTokens.purple }]}>Playback</Text>
             </View>
           </TouchableOpacity>
 
           {/* 5. Presentation Deck */}
           <TouchableOpacity
-            style={styles.bentoCard}
+            style={[styles.bentoCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}
             onPress={() => handleDeckPress('presentation')}
             activeOpacity={0.8}
           >
@@ -241,18 +271,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Path d="M7 21l5-6 5 6M12 15v6M9 9l3 3 3-3" stroke={CyberTokens.emerald} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             </View>
-            <Text style={styles.bentoTitle}>Presentation</Text>
-            <Text style={styles.bentoDescription}>
+            <Text style={[styles.bentoTitle, { color: tokens.textWhite }]}>Presentation</Text>
+            <Text style={[styles.bentoDescription, { color: tokens.textSecondary }]}>
               Rehearsal timer, interval alerts & slide hotkeys
             </Text>
-            <View style={styles.bentoPillTag}>
+            <View style={[styles.bentoPillTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
               <Text style={[styles.bentoPillText, { color: CyberTokens.emerald }]}>Slides & Timer</Text>
             </View>
           </TouchableOpacity>
 
           {/* 6. Shortcuts Deck */}
           <TouchableOpacity
-            style={styles.bentoCard}
+            style={[styles.bentoCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}
             onPress={() => handleDeckPress('shortcuts')}
             activeOpacity={0.8}
           >
@@ -264,50 +294,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Rect x="14" y="14" width="6" height="6" rx="1.5" stroke={CyberTokens.cyan} strokeWidth="2" />
               </Svg>
             </View>
-            <Text style={styles.bentoTitle}>Shortcuts</Text>
-            <Text style={styles.bentoDescription}>
+            <Text style={[styles.bentoTitle, { color: tokens.textWhite }]}>Shortcuts</Text>
+            <Text style={[styles.bentoDescription, { color: tokens.textSecondary }]}>
               Windows, Browser, Editing & System macros
             </Text>
-            <View style={styles.bentoPillTag}>
+            <View style={[styles.bentoPillTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
               <Text style={[styles.bentoPillText, { color: CyberTokens.cyan }]}>Quick Macros</Text>
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Quick PC Actions Strip */}
-        <View style={styles.quickToolsSection}>
-          <Text style={styles.quickToolsTitle}>Quick System Tools</Text>
+        <View style={[styles.quickToolsSection, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}>
+          <Text style={[styles.quickToolsTitle, { color: tokens.textSecondary }]}>Quick System Tools</Text>
           <View style={styles.quickToolsRow}>
             <TouchableOpacity
-              style={styles.quickActionTile}
+              style={[styles.quickActionTile, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' }]}
               onPress={() => handleQuickAction('Lock PC', () => socketService.shortcut(['win', 'l']))}
             >
               <Text style={styles.quickActionIcon}>🔒</Text>
-              <Text style={styles.quickActionLabel}>Lock PC</Text>
+              <Text style={[styles.quickActionLabel, { color: tokens.textSecondary }]}>Lock PC</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickActionTile}
+              style={[styles.quickActionTile, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' }]}
               onPress={() => handleQuickAction('Desktop', () => socketService.shortcut(['win', 'd']))}
             >
               <Text style={styles.quickActionIcon}>🖥️</Text>
-              <Text style={styles.quickActionLabel}>Desktop</Text>
+              <Text style={[styles.quickActionLabel, { color: tokens.textSecondary }]}>Desktop</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickActionTile}
+              style={[styles.quickActionTile, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' }]}
               onPress={() => handleQuickAction('Task View', () => socketService.shortcut(['win', 'tab']))}
             >
               <Text style={styles.quickActionIcon}>🔲</Text>
-              <Text style={styles.quickActionLabel}>Tasks</Text>
+              <Text style={[styles.quickActionLabel, { color: tokens.textSecondary }]}>Tasks</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.quickActionTile}
+              style={[styles.quickActionTile, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.04)' }]}
               onPress={() => handleQuickAction('Mute', () => socketService.key('media_volume_mute', 'tap'))}
             >
               <Text style={styles.quickActionIcon}>🔇</Text>
-              <Text style={styles.quickActionLabel}>Mute</Text>
+              <Text style={[styles.quickActionLabel, { color: tokens.textSecondary }]}>Mute</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -327,8 +357,28 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 10,
     marginBottom: 6,
+  },
+  themeToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  themeToggleEmoji: {
+    fontSize: 13,
+  },
+  themeToggleLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   titleRow: {
     flexDirection: 'row',

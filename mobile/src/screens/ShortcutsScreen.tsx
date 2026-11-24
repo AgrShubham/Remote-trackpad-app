@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { CyberTokens } from '../theme/cyberTokens';
+import { useTheme } from '../theme/ThemeContext';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 
@@ -292,8 +293,10 @@ interface ShortcutsScreenProps {
 
 export const ShortcutsScreen: React.FC<ShortcutsScreenProps> = ({
   onBack,
-  accentColor = CyberTokens.cyan,
+  accentColor: propAccentColor,
 }) => {
+  const { isDark, tokens, accent } = useTheme();
+  const accentColor = propAccentColor || accent.primary || tokens.cyan;
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
   const [lastExecutedId, setLastExecutedId] = useState<string | null>(null);
 
@@ -323,32 +326,40 @@ export const ShortcutsScreen: React.FC<ShortcutsScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }]}>
       {/* Top Bar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { backgroundColor: tokens.bgSurface, borderBottomColor: tokens.borderSubtle }]}>
         {onBack && (
           <TouchableOpacity
-            style={styles.backBtn}
+            style={[
+              styles.backBtn,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : 'rgba(0, 0, 0, 0.05)',
+                borderColor: tokens.borderSubtle,
+              },
+            ]}
             onPress={() => {
               hapticsService.light();
               onBack();
             }}
             activeOpacity={0.8}
           >
-            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tokens.textSecondary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M19 12H5M12 19l-7-7 7-7" />
             </Svg>
-            <Text style={styles.backBtnText}>Hub</Text>
+            <Text style={[styles.backBtnText, { color: tokens.textWhite }]}>Hub</Text>
           </TouchableOpacity>
         )}
 
         <View style={styles.topTitleBox}>
-          <Text style={styles.topTitleText}>Shortcuts & Macros</Text>
+          <Text style={[styles.topTitleText, { color: tokens.textWhite }]}>Shortcuts & Macros</Text>
         </View>
       </View>
 
       {/* Filter Tabs */}
-      <View style={styles.filterRow}>
+      <View style={[styles.filterRow, { backgroundColor: tokens.bgSurface, borderBottomColor: tokens.borderSubtle }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
           {categories.map((c) => {
             const isSelected = activeCategory === c.id;
@@ -357,6 +368,12 @@ export const ShortcutsScreen: React.FC<ShortcutsScreenProps> = ({
                 key={c.id}
                 style={[
                   styles.filterPill,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(255, 255, 255, 0.04)'
+                      : 'rgba(0, 0, 0, 0.04)',
+                    borderColor: tokens.borderSubtle,
+                  },
                   isSelected && [styles.filterPillActive, { borderColor: accentColor }],
                 ]}
                 onPress={() => {
@@ -365,7 +382,13 @@ export const ShortcutsScreen: React.FC<ShortcutsScreenProps> = ({
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.filterPillText, isSelected && { color: accentColor, fontWeight: '700' }]}>
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    { color: tokens.textSecondary },
+                    isSelected && { color: accentColor, fontWeight: '700' },
+                  ]}
+                >
                   {c.label}
                 </Text>
               </TouchableOpacity>
@@ -386,6 +409,7 @@ export const ShortcutsScreen: React.FC<ShortcutsScreenProps> = ({
                 key={macro.id}
                 style={[
                   styles.macroCard,
+                  { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle },
                   isExecuted && [styles.macroCardExecuted, { borderColor: cardAccent }],
                 ]}
                 onPress={() => handleExecute(macro)}
@@ -408,8 +432,8 @@ export const ShortcutsScreen: React.FC<ShortcutsScreenProps> = ({
                 </View>
 
                 {/* Title & Description */}
-                <Text style={styles.macroTitle}>{macro.title}</Text>
-                <Text style={styles.macroDescription} numberOfLines={2}>
+                <Text style={[styles.macroTitle, { color: tokens.textWhite }]}>{macro.title}</Text>
+                <Text style={[styles.macroDescription, { color: tokens.textSecondary }]} numberOfLines={2}>
                   {macro.description}
                 </Text>
 

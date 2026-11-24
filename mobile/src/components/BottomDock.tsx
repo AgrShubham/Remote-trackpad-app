@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { CyberTokens } from '../theme/cyberTokens';
+import { useTheme } from '../theme/ThemeContext';
 import { hapticsService } from '../services/HapticsService';
 
 export type BottomNavTab = 'remote' | 'screen' | 'settings';
@@ -15,8 +16,11 @@ interface BottomDockProps {
 export const BottomDock: React.FC<BottomDockProps> = ({
   activeTab,
   onSelectTab,
-  accentColor = CyberTokens.teal,
+  accentColor: propAccentColor,
 }) => {
+  const { isDark, tokens, accent } = useTheme();
+  const accentColor = propAccentColor || accent.primary;
+
   const tabs: { id: BottomNavTab; label: string }[] = [
     { id: 'remote', label: 'Remote' },
     { id: 'screen', label: 'Show on PC' },
@@ -29,7 +33,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
   };
 
   const renderIcon = (id: BottomNavTab, active: boolean) => {
-    const iconColor = active ? accentColor : CyberTokens.textSecondary;
+    const iconColor = active ? accentColor : tokens.textSecondary;
 
     if (id === 'remote') {
       return (
@@ -101,7 +105,18 @@ export const BottomDock: React.FC<BottomDockProps> = ({
 
   return (
     <View style={styles.outerContainer}>
-      <View style={styles.dockCapsule}>
+      <View
+        style={[
+          styles.dockCapsule,
+          {
+            backgroundColor: isDark
+              ? 'rgba(18, 20, 31, 0.94)'
+              : 'rgba(255, 255, 255, 0.96)',
+            borderColor: tokens.borderLight,
+            shadowOpacity: isDark ? 0.6 : 0.15,
+          },
+        ]}
+      >
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -111,7 +126,10 @@ export const BottomDock: React.FC<BottomDockProps> = ({
                 styles.tabItem,
                 isActive && [
                   styles.tabItemActive,
-                  { backgroundColor: `${accentColor}18` },
+                  {
+                    backgroundColor: `${accentColor}18`,
+                    borderColor: tokens.borderSubtle,
+                  },
                 ],
               ]}
               onPress={() => handleTabPress(tab.id)}
@@ -133,8 +151,8 @@ export const BottomDock: React.FC<BottomDockProps> = ({
                 style={[
                   styles.tabLabel,
                   isActive
-                    ? [styles.tabLabelActive, { color: CyberTokens.textWhite }]
-                    : styles.tabLabelInactive,
+                    ? [styles.tabLabelActive, { color: tokens.textWhite }]
+                    : [styles.tabLabelInactive, { color: tokens.textMuted }],
                 ]}
               >
                 {tab.label}

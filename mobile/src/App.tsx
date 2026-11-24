@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { CyberTokens } from './theme/cyberTokens';
+import { ThemeProvider, useTheme } from './theme/ThemeContext';
 import { socketService, ConnectionStatus } from './services/SocketService';
 import { autoConnectService } from './services/AutoConnectService';
 import { hapticsService } from './services/HapticsService';
@@ -33,7 +34,8 @@ import { PresentationScreen } from './screens/PresentationScreen';
 import { ShortcutsScreen } from './screens/ShortcutsScreen';
 import { ShowOnPcScreen } from './screens/ShowOnPcScreen';
 
-export default function App() {
+function AppContent() {
+  const { isDark, tokens, accent } = useTheme();
   const [showSplash, setShowSplash] = useState(true);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(authService.getCurrentUser());
   const [hasSkippedAuth, setHasSkippedAuth] = useState(authService.hasSkipped());
@@ -78,7 +80,7 @@ export default function App() {
     };
   }, []);
 
-  const currentAccent = ACCENT_PALETTES[settings.accentTheme] || ACCENT_PALETTES.teal;
+  const currentAccent = accent || ACCENT_PALETTES[settings.accentTheme] || ACCENT_PALETTES.teal;
 
   // 1. Splash Screen Phase
   if (showSplash) {
@@ -115,7 +117,7 @@ export default function App() {
   ];
 
   const renderDeckIcon = (deck: ControlDeckType, active: boolean, accentColor: string) => {
-    const iconColor = active ? accentColor : '#94a3b8';
+    const iconColor = active ? accentColor : tokens.textMuted;
     switch (deck) {
       case 'touchpad':
         return (
@@ -165,11 +167,28 @@ export default function App() {
 
   // 3. Main Application Hub & Decks
   return (
-    <SafeAreaView style={[styles.container, isFullscreen && styles.containerFullscreen]}>
-      <StatusBar hidden={isFullscreen} barStyle="light-content" backgroundColor="transparent" translucent={true} />
+    <SafeAreaView
+      style={[
+        styles.container,
+        { backgroundColor: tokens.bgObsidian },
+        isFullscreen && styles.containerFullscreen,
+      ]}
+    >
+      <StatusBar
+        hidden={isFullscreen}
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={tokens.bgObsidian}
+        translucent={Platform.OS === 'android'}
+      />
 
       {/* Main Content Area */}
-      <View style={[styles.content, isFullscreen && styles.contentFullscreen]}>
+      <View
+        style={[
+          styles.content,
+          { backgroundColor: tokens.bgObsidian },
+          isFullscreen && styles.contentFullscreen,
+        ]}
+      >
         {bottomTab === 'remote' ? (
           currentDeck === null ? (
             /* Central Command Home Hub */
@@ -184,22 +203,38 @@ export default function App() {
             />
           ) : (
             /* Active Control Deck View */
-            <View style={styles.deckContainer}>
+            <View style={[styles.deckContainer, { backgroundColor: tokens.bgObsidian }]}>
               {/* Top Quick Deck Switcher & Hub Return Ribbon - Hidden in Fullscreen */}
               {!isFullscreen && (
-                <View style={styles.deckSwitcherHeader}>
+                <View
+                  style={[
+                    styles.deckSwitcherHeader,
+                    {
+                      backgroundColor: tokens.bgSurface,
+                      borderBottomColor: tokens.borderSubtle,
+                    },
+                  ]}
+                >
                   <TouchableOpacity
-                    style={styles.hubReturnBtn}
+                    style={[
+                      styles.hubReturnBtn,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.05)',
+                        borderColor: tokens.borderSubtle,
+                      },
+                    ]}
                     onPress={() => {
                       hapticsService.light();
                       setCurrentDeck(null);
                     }}
                     activeOpacity={0.8}
                   >
-                    <Svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <Svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={tokens.textSecondary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <Path d="M19 12H5M12 19l-7-7 7-7" />
                     </Svg>
-                    <Text style={styles.hubReturnText}>Hub</Text>
+                    <Text style={[styles.hubReturnText, { color: tokens.textWhite }]}>Hub</Text>
                   </TouchableOpacity>
 
                   <View style={styles.deckPillsScroll}>
@@ -210,6 +245,11 @@ export default function App() {
                           key={dt.id}
                           style={[
                             styles.deckPill,
+                            {
+                              backgroundColor: isDark
+                                ? 'rgba(255, 255, 255, 0.03)'
+                                : 'rgba(0, 0, 0, 0.04)',
+                            },
                             isActive && [
                               styles.deckPillActive,
                               { backgroundColor: currentAccent.bgSoft, borderColor: currentAccent.border },
@@ -339,6 +379,14 @@ export default function App() {
         />
       </Modal>
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 

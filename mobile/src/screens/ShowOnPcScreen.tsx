@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { CyberTokens } from '../theme/cyberTokens';
+import { useTheme } from '../theme/ThemeContext';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 
@@ -21,8 +22,10 @@ interface ShowOnPcScreenProps {
 export const ShowOnPcScreen: React.FC<ShowOnPcScreenProps> = ({
   serverIp,
   serverName,
-  accentColor = CyberTokens.teal,
+  accentColor: propAccentColor,
 }) => {
+  const { isDark, tokens, accent } = useTheme();
+  const accentColor = propAccentColor || accent.primary;
   const isConnected = socketService.getStatus() === 'connected';
   const webPortalUrl = isConnected && serverIp
     ? `http://${serverIp}:${socketService.getPort()}`
@@ -42,18 +45,18 @@ export const ShowOnPcScreen: React.FC<ShowOnPcScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Top Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Show on PC</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text style={[styles.headerTitle, { color: tokens.textWhite }]}>Show on PC</Text>
+          <Text style={[styles.headerSubtitle, { color: tokens.textSecondary }]}>
             Share screen, cast photos & stream webcam directly to your PC
           </Text>
         </View>
 
         {/* Hero Web Portal Link Card */}
-        <View style={[styles.portalCard, { borderColor: isConnected ? `${accentColor}50` : CyberTokens.borderSubtle }]}>
+        <View style={[styles.portalCard, { backgroundColor: tokens.cardBase, borderColor: isConnected ? `${accentColor}50` : tokens.borderSubtle }]}>
           <View style={styles.portalCardHeader}>
             <View style={[styles.iconBox, { backgroundColor: `${accentColor}18` }]}>
               <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -62,16 +65,16 @@ export const ShowOnPcScreen: React.FC<ShowOnPcScreenProps> = ({
               </Svg>
             </View>
             <View style={styles.portalTitleBox}>
-              <Text style={styles.portalCardTitle}>PC Web Receiver</Text>
-              <Text style={styles.portalCardSubtitle}>
+              <Text style={[styles.portalCardTitle, { color: tokens.textWhite }]}>PC Web Receiver</Text>
+              <Text style={[styles.portalCardSubtitle, { color: tokens.textSecondary }]}>
                 {isConnected ? `Hosted on ${serverName || 'PC'}` : 'Offline'}
               </Text>
             </View>
           </View>
 
-          <View style={styles.urlContainer}>
-            <Text style={styles.urlLabel}>Browser Access URL:</Text>
-            <Text style={styles.urlText} selectable>{webPortalUrl}</Text>
+          <View style={[styles.urlContainer, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.04)', borderColor: tokens.borderSubtle }]}>
+            <Text style={[styles.urlLabel, { color: tokens.textMuted }]}>Browser Access URL:</Text>
+            <Text style={[styles.urlText, { color: tokens.textWhite }]} selectable>{webPortalUrl}</Text>
           </View>
 
           <TouchableOpacity
@@ -87,48 +90,48 @@ export const ShowOnPcScreen: React.FC<ShowOnPcScreenProps> = ({
         {/* Feature Cards Grid */}
         <View style={styles.featuresGrid}>
           {/* 1. Screen Mirroring Card */}
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: `${CyberTokens.blue}18` }]}>
+          <View style={[styles.featureCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}>
+            <View style={[styles.featureIcon, { backgroundColor: `${tokens.blue}18` }]}>
               <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <Rect x="2" y="4" width="20" height="14" rx="2.5" stroke={CyberTokens.blue} strokeWidth="2" />
-                <Path d="M9 18l3-3 3 3" stroke={CyberTokens.blue} strokeWidth="1.8" strokeLinecap="round" />
+                <Rect x="2" y="4" width="20" height="14" rx="2.5" stroke={tokens.blue} strokeWidth="2" />
+                <Path d="M9 18l3-3 3 3" stroke={tokens.blue} strokeWidth="1.8" strokeLinecap="round" />
               </Svg>
             </View>
-            <Text style={styles.featureTitle}>Screen Mirroring</Text>
-            <Text style={styles.featureDescription}>
+            <Text style={[styles.featureTitle, { color: tokens.textWhite }]}>Screen Mirroring</Text>
+            <Text style={[styles.featureDescription, { color: tokens.textSecondary }]}>
               Cast your phone screen in real-time onto the PC desktop monitor with zero setup.
             </Text>
             <View style={styles.badgeRow}>
-              <View style={styles.badgePill}>
-                <Text style={styles.badgeText}>Local Wi-Fi</Text>
+              <View style={[styles.badgePill, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
+                <Text style={[styles.badgeText, { color: tokens.textMuted }]}>Local Wi-Fi</Text>
               </View>
             </View>
           </View>
 
           {/* 2. Webcam & Mic Stream */}
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: `${CyberTokens.purple}18` }]}>
+          <View style={[styles.featureCard, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}>
+            <View style={[styles.featureIcon, { backgroundColor: `${tokens.purple}18` }]}>
               <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <Path d="M23 7l-7 5 7 5V7z" stroke={CyberTokens.purple} strokeWidth="2" strokeLinejoin="round" />
-                <Rect x="1" y="5" width="15" height="14" rx="2" stroke={CyberTokens.purple} strokeWidth="2" />
+                <Path d="M23 7l-7 5 7 5V7z" stroke={tokens.purple} strokeWidth="2" strokeLinejoin="round" />
+                <Rect x="1" y="5" width="15" height="14" rx="2" stroke={tokens.purple} strokeWidth="2" />
               </Svg>
             </View>
-            <Text style={styles.featureTitle}>HD Phone Webcam</Text>
-            <Text style={styles.featureDescription}>
+            <Text style={[styles.featureTitle, { color: tokens.textWhite }]}>HD Phone Webcam</Text>
+            <Text style={[styles.featureDescription, { color: tokens.textSecondary }]}>
               Turn your smartphone camera into a wireless HD PC webcam for Zoom, Teams and OBS.
             </Text>
             <View style={styles.badgeRow}>
-              <View style={styles.badgePill}>
-                <Text style={styles.badgeText}>1080p Stream</Text>
+              <View style={[styles.badgePill, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)' }]}>
+                <Text style={[styles.badgeText, { color: tokens.textMuted }]}>1080p Stream</Text>
               </View>
             </View>
           </View>
         </View>
 
         {/* Security & Local Network Notice */}
-        <View style={styles.noticeBox}>
+        <View style={[styles.noticeBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)', borderColor: tokens.borderSubtle }]}>
           <Text style={styles.noticeIcon}>🔒</Text>
-          <Text style={styles.noticeText}>
+          <Text style={[styles.noticeText, { color: tokens.textSecondary }]}>
             Streamed completely offline through your local Wi-Fi or Windows Mobile Hotspot. No video or audio leaves your private network.
           </Text>
         </View>

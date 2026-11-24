@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 import { CyberTokens } from '../theme/cyberTokens';
+import { useTheme } from '../theme/ThemeContext';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 
@@ -22,8 +23,10 @@ export const PresentationScreen: React.FC<PresentationScreenProps> = ({
   isFullscreen,
   onToggleFullscreen,
   onBack,
-  accentColor = CyberTokens.emerald,
+  accentColor: propAccentColor,
 }) => {
+  const { isDark, tokens, accent } = useTheme();
+  const accentColor = propAccentColor || accent.primary || tokens.emerald;
   // Timer State (Target in seconds, default 15 minutes = 900s)
   const [targetSeconds, setTargetSeconds] = useState<number>(900);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900);
@@ -151,27 +154,27 @@ export const PresentationScreen: React.FC<PresentationScreenProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }]}>
       {/* Top Deck Navigation Bar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { backgroundColor: tokens.bgSurface, borderBottomColor: tokens.borderSubtle }]}>
         {onBack && (
           <TouchableOpacity
-            style={styles.backBtn}
+            style={[styles.backBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)', borderColor: tokens.borderSubtle }]}
             onPress={() => {
               hapticsService.light();
               onBack();
             }}
             activeOpacity={0.8}
           >
-            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tokens.textSecondary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <Path d="M19 12H5M12 19l-7-7 7-7" />
             </Svg>
-            <Text style={styles.backBtnText}>Hub</Text>
+            <Text style={[styles.backBtnText, { color: tokens.textWhite }]}>Hub</Text>
           </TouchableOpacity>
         )}
 
         <View style={styles.topCenterTitle}>
-          <Text style={styles.topTitleText}>Presentation Deck</Text>
+          <Text style={[styles.topTitleText, { color: tokens.textWhite }]}>Presentation Deck</Text>
         </View>
 
         {onToggleFullscreen && (

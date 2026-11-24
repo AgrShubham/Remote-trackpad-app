@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ConnectionStatus } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
 
 interface ServerSwitcherBarProps {
   status: ConnectionStatus;
@@ -18,8 +19,10 @@ export const ServerSwitcherBar: React.FC<ServerSwitcherBarProps> = ({
   serverIp,
   latency,
   onOpenSwitcher,
-  accentColor = '#3b82f6',
+  accentColor: propAccentColor,
 }) => {
+  const { isDark, tokens, accent } = useTheme();
+  const accentColor = propAccentColor || accent.primary;
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
 
@@ -29,7 +32,15 @@ export const ServerSwitcherBar: React.FC<ServerSwitcherBarProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: tokens.bgSurface,
+          borderBottomColor: tokens.borderSubtle,
+        },
+      ]}
+    >
       <TouchableOpacity
         style={styles.contentRow}
         onPress={handlePress}
@@ -46,7 +57,10 @@ export const ServerSwitcherBar: React.FC<ServerSwitcherBarProps> = ({
               !isConnected && !isConnecting && styles.dotDisconnected,
             ]}
           />
-          <Text style={styles.serverTitleText} numberOfLines={1}>
+          <Text
+            style={[styles.serverTitleText, { color: tokens.textWhite }]}
+            numberOfLines={1}
+          >
             {isConnected
               ? serverName || serverIp || 'Connected PC'
               : isConnecting
@@ -58,7 +72,17 @@ export const ServerSwitcherBar: React.FC<ServerSwitcherBarProps> = ({
         {/* Right Side: Latency Badge + Switch Button */}
         <View style={styles.rightActionsRow}>
           {isConnected && (
-            <View style={styles.latencyBadge}>
+            <View
+              style={[
+                styles.latencyBadge,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255, 255, 255, 0.06)'
+                    : 'rgba(0, 0, 0, 0.05)',
+                  borderColor: tokens.borderSubtle,
+                },
+              ]}
+            >
               <Text
                 style={[
                   styles.latencyText,

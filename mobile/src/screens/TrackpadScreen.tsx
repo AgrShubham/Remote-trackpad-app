@@ -14,6 +14,7 @@ import Svg, { Path, Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { audioService } from '../services/AudioService';
+import { useTheme } from '../theme/ThemeContext';
 
 interface TrackpadScreenProps {
   isFullscreen?: boolean;
@@ -26,6 +27,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   onToggleFullscreen,
   onBack,
 }) => {
+  const { isDark, tokens } = useTheme();
   const [speed, setSpeed] = useState<number>(1.4);
   const [isDragLocked, setIsDragLocked] = useState<boolean>(false);
   const [leftClickActive, setLeftClickActive] = useState<boolean>(false);
@@ -378,30 +380,52 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   };
 
   return (
-    <View style={[styles.container, isFullscreen && styles.fullscreenContainer]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: tokens.bgObsidian },
+        isFullscreen && styles.fullscreenContainer,
+      ]}
+    >
       {/* Top Floating Action Bar (Hidden in Fullscreen) */}
       {!isFullscreen && (
         <View style={styles.topBar}>
           {/* Back to Hub Button */}
           {onBack && (
             <TouchableOpacity
-              style={styles.backBtn}
+              style={[
+                styles.backBtn,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255, 255, 255, 0.08)'
+                    : 'rgba(0, 0, 0, 0.05)',
+                  borderColor: tokens.borderSubtle,
+                },
+              ]}
               onPress={() => {
                 hapticsService.light();
                 onBack();
               }}
               activeOpacity={0.8}
             >
-              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={tokens.textSecondary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M19 12H5M12 19l-7-7 7-7" />
               </Svg>
-              <Text style={styles.backBtnText}>Hub</Text>
+              <Text style={[styles.backBtnText, { color: tokens.textWhite }]}>Hub</Text>
             </TouchableOpacity>
           )}
 
           {/* Floating Sensitivity Pill - Tapping opens real-time scrubber */}
           <TouchableOpacity
-            style={styles.sensitivityPill}
+            style={[
+              styles.sensitivityPill,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : 'rgba(0, 0, 0, 0.05)',
+                borderColor: tokens.borderSubtle,
+              },
+            ]}
             onPress={() => {
               hapticsService.light();
               setIsSensitivityModalOpen(true);
@@ -412,29 +436,46 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
             <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
             </Svg>
-            <Text style={styles.sensitivityPillText}>{speed.toFixed(1)}× Sensitivity</Text>
-            <Svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="#8b8d9c" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <Text style={[styles.sensitivityPillText, { color: tokens.textSecondary }]}>{speed.toFixed(1)}× Sensitivity</Text>
+            <Svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={tokens.textMuted} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M6 9l6 6 6-6" />
             </Svg>
           </TouchableOpacity>
 
           {/* Clean Fullscreen Action Pill */}
           <TouchableOpacity
-            style={styles.fullscreenBtn}
+            style={[
+              styles.fullscreenBtn,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : 'rgba(0, 0, 0, 0.05)',
+                borderColor: tokens.borderSubtle,
+              },
+            ]}
             onPress={toggleFullscreen}
             activeOpacity={0.8}
             focusable={false}
           >
-            <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#e5e5ea" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={tokens.textSecondary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
             </Svg>
-            <Text style={styles.fullscreenBtnText}>Fullscreen</Text>
+            <Text style={[styles.fullscreenBtnText, { color: tokens.textSecondary }]}>Fullscreen</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {/* Monolithic Glass Trackpad Surface */}
-      <View style={[styles.macTrackpadFrame, isFullscreen && styles.macTrackpadFrameFullscreen]}>
+      <View
+        style={[
+          styles.macTrackpadFrame,
+          {
+            backgroundColor: tokens.bgSurface,
+            borderColor: tokens.borderSubtle,
+          },
+          isFullscreen && styles.macTrackpadFrameFullscreen,
+        ]}
+      >
         {/* Floating Exit Button in Fullscreen Mode */}
         {isFullscreen && (
           <TouchableOpacity
@@ -457,7 +498,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
             <Svg width="100%" height="100%">
               <Defs>
                 <Pattern id="trackpad-dots" width="22" height="22" patternUnits="userSpaceOnUse">
-                  <Circle cx="11" cy="11" r="1.1" fill="rgba(255, 255, 255, 0.08)" />
+                  <Circle cx="11" cy="11" r="1.1" fill={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'} />
                 </Pattern>
               </Defs>
               <Rect width="100%" height="100%" fill="url(#trackpad-dots)" />
@@ -479,7 +520,18 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         </View>
 
         {/* Seamless Laptop-Style Bottom Click Zones with Center Scroll Strip */}
-        <View style={[styles.seamlessClickBar, isFullscreen && styles.seamlessClickBarFullscreen]}>
+        <View
+          style={[
+            styles.seamlessClickBar,
+            {
+              borderTopColor: tokens.borderSubtle,
+              backgroundColor: isDark
+                ? 'rgba(255, 255, 255, 0.015)'
+                : 'rgba(0, 0, 0, 0.02)',
+            },
+            isFullscreen && styles.seamlessClickBarFullscreen,
+          ]}
+        >
           {/* Left Click Zone */}
           <TouchableOpacity
             style={[styles.seamlessClickZone, leftClickActive && styles.seamlessClickActive]}
@@ -502,13 +554,24 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
               <Path d="M6 9h6" />
               <Path d="M12 3v6" />
             </Svg>
-            <Text style={[styles.seamlessClickText, leftClickActive && styles.seamlessClickTextActive]}>
+            <Text style={[styles.seamlessClickText, { color: tokens.textSecondary }, leftClickActive && styles.seamlessClickTextActive]}>
               Left Click
             </Text>
           </TouchableOpacity>
 
           {/* Center Vertical Scroll Slider Strip */}
-          <View style={styles.centerScrollStrip} {...scrollStripPanResponder.panHandlers}>
+          <View
+            style={[
+              styles.centerScrollStrip,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.04)'
+                  : 'rgba(0, 0, 0, 0.03)',
+                borderColor: tokens.borderSubtle,
+              },
+            ]}
+            {...scrollStripPanResponder.panHandlers}
+          >
             <Svg width={14} height={18} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5" />
             </Svg>
@@ -536,7 +599,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
               <Path d="M12 9h6" />
               <Path d="M12 3v6" />
             </Svg>
-            <Text style={[styles.seamlessClickText, rightClickActive && styles.seamlessClickTextActive]}>
+            <Text style={[styles.seamlessClickText, { color: tokens.textSecondary }, rightClickActive && styles.seamlessClickTextActive]}>
               Right Click
             </Text>
           </TouchableOpacity>
@@ -545,11 +608,11 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
       {/* Docked Direct Text Input Bar */}
       {!isFullscreen && (
-        <View style={styles.dockedInputBar}>
+        <View style={[styles.dockedInputBar, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}>
           <TextInput
-            style={styles.dockedTextInput}
+            style={[styles.dockedTextInput, { color: tokens.textWhite }]}
             placeholder="Type here to send directly to PC..."
-            placeholderTextColor="#64748b"
+            placeholderTextColor={tokens.textMuted}
             value={directText}
             onChangeText={setDirectText}
             onSubmitEditing={handleSendDirectText}

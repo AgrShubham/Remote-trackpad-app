@@ -10,6 +10,7 @@ import {
 import Svg, { Path, Rect, Circle, Polygon } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
 
 interface MediaScreenProps {
   isFullscreen?: boolean;
@@ -20,6 +21,7 @@ export const MediaScreen: React.FC<MediaScreenProps> = ({
   isFullscreen,
   onToggleFullscreen,
 }) => {
+  const { isDark, tokens } = useTheme();
   const [volume, setVolume] = useState<number>(60);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -91,22 +93,29 @@ export const MediaScreen: React.FC<MediaScreenProps> = ({
   ).current;
 
   return (
-    <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
+    <View style={[styles.container, { backgroundColor: tokens.bgObsidian }, isFullscreen && styles.containerFullscreen]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header Bar */}
         <View style={styles.header}>
           <View style={styles.titleRow}>
             <View style={styles.headerDot} />
-            <Text style={styles.headerTitle}>HIFI MEDIA DECK</Text>
+            <Text style={[styles.headerTitle, { color: tokens.textWhite }]}>HIFI MEDIA DECK</Text>
           </View>
           {onToggleFullscreen && (
             <TouchableOpacity
-              style={[styles.fullscreenBtn, isFullscreen && styles.fullscreenBtnActive]}
+              style={[
+                styles.fullscreenBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+                  borderColor: tokens.borderSubtle,
+                },
+                isFullscreen && styles.fullscreenBtnActive,
+              ]}
               onPress={onToggleFullscreen}
               activeOpacity={0.8}
               focusable={false}
             >
-              <Text style={[styles.fullscreenBtnText, isFullscreen && styles.fullscreenBtnTextActive]}>
+              <Text style={[styles.fullscreenBtnText, { color: tokens.textSecondary }, isFullscreen && styles.fullscreenBtnTextActive]}>
                 {isFullscreen ? '✕ Exit' : '⛶ Fullscreen'}
               </Text>
             </TouchableOpacity>
@@ -114,7 +123,7 @@ export const MediaScreen: React.FC<MediaScreenProps> = ({
         </View>
 
         {/* Master Volume Scrubber Card */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: tokens.cardBase, borderColor: tokens.borderSubtle }]}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderLeft}>
               <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2}>
@@ -122,7 +131,7 @@ export const MediaScreen: React.FC<MediaScreenProps> = ({
                 <Path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
                 <Path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
               </Svg>
-              <Text style={styles.cardTitle}>Master Volume</Text>
+              <Text style={[styles.cardTitle, { color: tokens.textWhite }]}>Master Volume</Text>
             </View>
             <View style={[styles.volBadge, isMuted && styles.volBadgeMuted]}>
               <Text style={[styles.volBadgeText, isMuted && styles.volBadgeTextMuted]}>
