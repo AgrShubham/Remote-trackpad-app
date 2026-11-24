@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   Modal,
   PanResponder,
+  Dimensions,
 } from 'react-native';
 import Orientation from 'react-native-orientation-locker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
-import { Colors } from '../theme/colors';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { ConcentricStick } from '../components/ConcentricStick';
@@ -48,10 +48,16 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
   isFullscreen,
   onToggleFullscreen,
 }) => {
-  const [layout, setLayout] = useState<LayoutType>('arc');
+  const [layout, setLayout] = useState<LayoutType>('asymmetric');
   const [labelMode, setLabelMode] = useState<0 | 1 | 2>(0); // 0: Buttons, 1: Actions, 2: Keys
   const [bindings, setBindings] = useState<Record<string, ButtonBinding>>(DEFAULT_BINDINGS);
   const [activeButton, setActiveButton] = useState<string | null>(null);
+
+  // Orientation State Machine (Defaults to current orientation; does NOT force rotation on mount)
+  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
+    const { width, height } = Dimensions.get('window');
+    return width > height;
+  });
 
   // Thumbstick Tuning States
   const [deadzone, setDeadzone] = useState<number>(0.12);
@@ -73,19 +79,37 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
   const sensPageXRef = useRef<number>(0);
 
   useEffect(() => {
-    try {
-      Orientation.lockToLandscape();
-    } catch (e) {}
+    // Listen for orientation/dimension updates
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setIsLandscape(window.width > window.height);
+    });
 
     loadSavedSettings();
 
     return () => {
+      subscription?.remove();
       socketService.gamepadReleaseAll();
       try {
-        Orientation.unlockAllOrientations();
+        // Restore standard portrait mode on exit
+        Orientation.lockToPortrait();
       } catch (e) {}
     };
   }, []);
+
+  const toggleOrientation = () => {
+    hapticsService.light();
+    if (isLandscape) {
+      try {
+        Orientation.lockToPortrait();
+      } catch (e) {}
+      setIsLandscape(false);
+    } else {
+      try {
+        Orientation.lockToLandscape();
+      } catch (e) {}
+      setIsLandscape(true);
+    }
+  };
 
   const loadSavedSettings = async () => {
     try {
@@ -118,7 +142,7 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
 
   const cycleLayout = () => {
     socketService.gamepadReleaseAll();
-    const order: LayoutType[] = ['arc', 'asymmetric', 'symmetric'];
+    const order: LayoutType[] = ['asymmetric', 'arc', 'symmetric'];
     const nextIdx = (order.indexOf(layout) + 1) % order.length;
     const nextLayout = order[nextIdx];
     setLayout(nextLayout);
@@ -172,7 +196,6 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
     const width = deadzoneWidthRef.current || 200;
     const x = pageX - deadzonePageXRef.current;
     const fraction = Math.max(0, Math.min(1, x / width));
-    // Range 0.05 to 0.30 (span = 0.25)
     const val = parseFloat((0.05 + fraction * 0.25).toFixed(2));
     setDeadzone(val);
     AsyncStorage.setItem(GAMEPAD_DEADZONE_KEY, val.toString()).catch(() => {});
@@ -197,7 +220,6 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
     const width = sensWidthRef.current || 200;
     const x = pageX - sensPageXRef.current;
     const fraction = Math.max(0, Math.min(1, x / width));
-    // Range 0.5 to 2.5 (span = 2.0)
     const val = parseFloat((0.5 + fraction * 2.0).toFixed(1));
     setStickSensitivity(val);
     AsyncStorage.setItem(GAMEPAD_SENSITIVITY_KEY, val.toString()).catch(() => {});
@@ -217,113 +239,191 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
     })
   ).current;
 
+  // Render ABXY Diamond
+  const renderABXYCluster = () => (
+    <View style={styles.diamondGrid}>
+      {/* Y Button (Top - Amber) */}
+      <TouchableOpacity
+        style={[styles.jewelBtn, styles.btnY, activeButton === 'Y' && styles.btnYActive]}
+        onPressIn={() => handleButtonPressIn('Y')}
+        onPressOut={() => handleButtonPressOut('Y')}
+        activeOpacity={1}
+      >
+        <Text style={[styles.jewelBtnText, styles.textY]}>{getButtonText('Y')}</Text>
+      </TouchableOpacity>
+
+      {/* X & B Row */}
+      <View style={styles.diamondMidRow}>
+        {/* X (Left - Azure Blue) */}
+        <TouchableOpacity
+          style={[styles.jewelBtn, styles.btnX, activeButton === 'X' && styles.btnXActive]}
+          onPressIn={() => handleButtonPressIn('X')}
+          onPressOut={() => handleButtonPressOut('X')}
+          activeOpacity={1}
+        >
+          <Text style={[styles.jewelBtnText, styles.textX]}>{getButtonText('X')}</Text>
+        </TouchableOpacity>
+
+        {/* B (Right - Crimson Red) */}
+        <TouchableOpacity
+          style={[styles.jewelBtn, styles.btnB, activeButton === 'B' && styles.btnBActive]}
+          onPressIn={() => handleButtonPressIn('B')}
+          onPressOut={() => handleButtonPressOut('B')}
+          activeOpacity={1}
+        >
+          <Text style={[styles.jewelBtnText, styles.textB]}>{getButtonText('B')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* A Button (Bottom - Emerald Green) */}
+      <TouchableOpacity
+        style={[styles.jewelBtn, styles.btnA, activeButton === 'A' && styles.btnAActive]}
+        onPressIn={() => handleButtonPressIn('A')}
+        onPressOut={() => handleButtonPressOut('A')}
+        activeOpacity={1}
+      >
+        <Text style={[styles.jewelBtnText, styles.textA]}>{getButtonText('A')}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
-      {/* Top Shoulder & Trigger Bar with Curved Corner Grip Pads */}
-      <View style={styles.topShoulderBar}>
-        {/* Left Shoulder & Trigger Corner Grip */}
-        <View style={styles.cornerGripLeft}>
+      {/* ================= HEADER CONTROLLER TOOLBAR ================= */}
+      <View style={styles.headerToolbar}>
+        <View style={styles.headerLeftGroup}>
+          <View style={styles.gamepadBadge}>
+            <Text style={styles.gamepadBadgeIcon}>🎮</Text>
+            <Text style={styles.gamepadBadgeText}>Gamepad Pro</Text>
+          </View>
           <TouchableOpacity
-            style={[styles.cornerTrigger, styles.cornerTriggerLeft, activeButton === 'LT' && styles.triggerActive]}
+            style={styles.headerPill}
+            onPress={cycleLabelMode}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.headerPillText}>
+              {labelMode === 0 ? 'Buttons' : labelMode === 1 ? 'Actions' : 'Keys'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.headerRightGroup}>
+          {/* Layout Mode Cycle */}
+          <TouchableOpacity
+            style={styles.headerPill}
+            onPress={cycleLayout}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.headerPillText}>
+              {layout === 'asymmetric' ? 'Xbox' : layout === 'symmetric' ? 'PS' : 'Arc'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Tuning Drawer */}
+          <TouchableOpacity
+            style={styles.headerPill}
+            onPress={() => {
+              setIsTuningModalVisible(true);
+              hapticsService.light();
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.headerPillText}>⚙️</Text>
+          </TouchableOpacity>
+
+          {/* Orientation Toggle Button */}
+          <TouchableOpacity
+            style={[styles.headerPill, isLandscape && styles.orientationPillActive]}
+            onPress={toggleOrientation}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.headerPillText, isLandscape && styles.orientationPillTextActive]}>
+              {isLandscape ? '📱 Portrait' : '🔄 Landscape'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Fullscreen Toggle */}
+          {onToggleFullscreen && (
+            <TouchableOpacity
+              style={styles.headerPill}
+              onPress={onToggleFullscreen}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.headerPillText}>{isFullscreen ? '✕' : '⛶'}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* ================= TOP SHOULDER TRIGGERS & BUMPERS ================= */}
+      <View style={styles.shoulderSection}>
+        {/* Left Shoulder Cluster */}
+        <View style={styles.shoulderPod}>
+          <TouchableOpacity
+            style={[styles.shoulderBtn, styles.triggerBtn, activeButton === 'LT' && styles.triggerActive]}
             onPressIn={() => handleButtonPressIn('LT', true)}
             onPressOut={() => handleButtonPressOut('LT')}
             activeOpacity={1}
-            focusable={false}
           >
             <Text style={styles.triggerBadge}>LT</Text>
             <Text style={styles.shoulderBtnText}>{getButtonText('LT')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.cornerBumper, activeButton === 'LB' && styles.bumperActive]}
+            style={[styles.shoulderBtn, styles.bumperBtn, activeButton === 'LB' && styles.bumperActive]}
             onPressIn={() => handleButtonPressIn('LB', false, true)}
             onPressOut={() => handleButtonPressOut('LB')}
             activeOpacity={1}
-            focusable={false}
           >
             <Text style={styles.bumperBadge}>LB</Text>
             <Text style={styles.shoulderBtnText}>{getButtonText('LB')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Center Controller Control Deck */}
-        <View style={styles.centerControlGroup}>
-          {/* 3-Way Layout Switcher Button */}
+        {/* Center System Navigation Pills (Select, Logo, Start) */}
+        <View style={styles.systemNavCenter}>
           <TouchableOpacity
-            style={styles.layoutToggle}
-            onPress={cycleLayout}
-            activeOpacity={0.8}
-            focusable={false}
+            style={[styles.systemNavBtn, activeButton === 'SELECT' && styles.systemNavBtnActive]}
+            onPressIn={() => handleButtonPressIn('SELECT')}
+            onPressOut={() => handleButtonPressOut('SELECT')}
+            activeOpacity={1}
           >
-            <Text style={styles.layoutToggleLabel}>LAYOUT</Text>
-            <Text style={styles.layoutToggleText}>
-              {layout === 'arc' ? '🕹️ Arc (Mobile)' : layout === 'asymmetric' ? '🎮 Xbox (Asym)' : '🎮 PS (Sym)'}
-            </Text>
+            <Text style={styles.systemNavIcon}>◀</Text>
+            <Text style={styles.systemNavText}>{getButtonText('SELECT')}</Text>
           </TouchableOpacity>
 
-          {/* Tuning Drawer Button */}
-          <TouchableOpacity
-            style={styles.tuningBtn}
-            onPress={() => {
-              setIsTuningModalVisible(true);
-              hapticsService.light();
-            }}
-            activeOpacity={0.8}
-            focusable={false}
-          >
-            <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.5}>
-              <Path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-              <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-            </Svg>
-            <Text style={styles.tuningBtnText}>Tuning</Text>
-          </TouchableOpacity>
+          <View style={styles.consoleLogoBadge}>
+            <View style={styles.logoDot} />
+          </View>
 
-          {/* Label Mode Switcher */}
           <TouchableOpacity
-            style={styles.labelModePill}
-            onPress={cycleLabelMode}
-            activeOpacity={0.8}
-            focusable={false}
+            style={[styles.systemNavBtn, activeButton === 'START' && styles.systemNavBtnActive]}
+            onPressIn={() => handleButtonPressIn('START')}
+            onPressOut={() => handleButtonPressOut('START')}
+            activeOpacity={1}
           >
-            <Text style={styles.labelModeText}>
-              {labelMode === 0 ? 'Buttons' : labelMode === 1 ? 'Actions' : 'PC Keys'}
-            </Text>
+            <Text style={styles.systemNavIcon}>▶</Text>
+            <Text style={styles.systemNavText}>{getButtonText('START')}</Text>
           </TouchableOpacity>
-
-          {/* Fullscreen Button */}
-          {onToggleFullscreen && (
-            <TouchableOpacity
-              style={[styles.fullscreenToggle, isFullscreen && styles.fullscreenToggleActive]}
-              onPress={onToggleFullscreen}
-              activeOpacity={0.8}
-              focusable={false}
-            >
-              <Text style={[styles.fullscreenToggleText, isFullscreen && styles.fullscreenToggleTextActive]}>
-                {isFullscreen ? '✕ Exit' : '⛶'}
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
 
-        {/* Right Shoulder & Trigger Corner Grip */}
-        <View style={styles.cornerGripRight}>
+        {/* Right Shoulder Cluster */}
+        <View style={styles.shoulderPod}>
           <TouchableOpacity
-            style={[styles.cornerBumper, activeButton === 'RB' && styles.bumperActive]}
+            style={[styles.shoulderBtn, styles.bumperBtn, activeButton === 'RB' && styles.bumperActive]}
             onPressIn={() => handleButtonPressIn('RB', false, true)}
             onPressOut={() => handleButtonPressOut('RB')}
             activeOpacity={1}
-            focusable={false}
           >
             <Text style={styles.bumperBadge}>RB</Text>
             <Text style={styles.shoulderBtnText}>{getButtonText('RB')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.cornerTrigger, styles.cornerTriggerRight, activeButton === 'RT' && styles.triggerActive]}
+            style={[styles.shoulderBtn, styles.triggerBtn, activeButton === 'RT' && styles.triggerActive]}
             onPressIn={() => handleButtonPressIn('RT', true)}
             onPressOut={() => handleButtonPressOut('RT')}
             activeOpacity={1}
-            focusable={false}
           >
             <Text style={styles.triggerBadge}>RT</Text>
             <Text style={styles.shoulderBtnText}>{getButtonText('RT')}</Text>
@@ -331,150 +431,75 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
         </View>
       </View>
 
-      {/* Main Handheld Controller Canvas */}
-      <View style={styles.consoleBody}>
-        <View style={styles.layoutContainer}>
-          {/* ================= LEFT CONTROLLER WING ================= */}
-          <View style={[styles.wing, layout === 'arc' && styles.wingArcLeft]}>
-            {layout === 'asymmetric' ? (
-              /* Xbox Mode: Left Stick on TOP, D-Pad on BOTTOM */
+      {/* ================= CONTROLLER MAIN COCKPIT ================= */}
+      {isLandscape ? (
+        /* Widescreen Landscape Console */
+        <View style={styles.consoleBodyLandscape}>
+          {/* Left Wing */}
+          <View style={[styles.wingLandscape, layout === 'arc' && styles.wingArcLeft]}>
+            {layout === 'symmetric' ? (
               <>
-                <View style={styles.wingUpper}>
-                  <ConcentricStick label="LS" size={118} deadzone={deadzone} sensitivity={stickSensitivity} />
-                </View>
-                <View style={styles.wingLower}>
-                  <CloverDpad size={106} />
-                </View>
-              </>
-            ) : layout === 'symmetric' ? (
-              /* PlayStation Mode: D-Pad on TOP, Left Stick on BOTTOM */
-              <>
-                <View style={styles.wingUpper}>
-                  <CloverDpad size={106} />
-                </View>
-                <View style={styles.wingLower}>
-                  <ConcentricStick label="LS" size={118} deadzone={deadzone} sensitivity={stickSensitivity} />
-                </View>
+                <View style={styles.wingCell}><CloverDpad size={112} /></View>
+                <View style={styles.wingCell}><ConcentricStick label="LS" size={124} deadzone={deadzone} sensitivity={stickSensitivity} /></View>
               </>
             ) : (
-              /* Natural Arc Mode: Left Stick angled on upper-left sweep, D-pad on lower-inner sweep */
               <>
-                <View style={[styles.wingUpper, styles.arcUpperLeft]}>
-                  <ConcentricStick label="LS" size={118} deadzone={deadzone} sensitivity={stickSensitivity} />
-                </View>
-                <View style={[styles.wingLower, styles.arcLowerLeft]}>
-                  <CloverDpad size={106} />
-                </View>
+                <View style={styles.wingCell}><ConcentricStick label="LS" size={124} deadzone={deadzone} sensitivity={stickSensitivity} /></View>
+                <View style={styles.wingCell}><CloverDpad size={112} /></View>
               </>
             )}
           </View>
 
-          {/* ================= CENTER DECK ================= */}
-          <View style={styles.centerDeck}>
-            {/* Select & Start Buttons */}
-            <View style={styles.centerNavRow}>
-              <TouchableOpacity
-                style={[styles.centerNavBtn, activeButton === 'SELECT' && styles.centerNavBtnActive]}
-                onPressIn={() => handleButtonPressIn('SELECT')}
-                onPressOut={() => handleButtonPressOut('SELECT')}
-                activeOpacity={1}
-                focusable={false}
-              >
-                <Text style={styles.centerNavIcon}>⧉</Text>
-                <Text style={styles.centerNavLabel}>{getButtonText('SELECT')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.centerNavBtn, activeButton === 'START' && styles.centerNavBtnActive]}
-                onPressIn={() => handleButtonPressIn('START')}
-                onPressOut={() => handleButtonPressOut('START')}
-                activeOpacity={1}
-                focusable={false}
-              >
-                <Text style={styles.centerNavIcon}>☰</Text>
-                <Text style={styles.centerNavLabel}>{getButtonText('START')}</Text>
-              </TouchableOpacity>
+          {/* Center Bridge */}
+          <View style={styles.centerBridgeLandscape}>
+            <View style={styles.bridgeInfoPill}>
+              <Text style={styles.bridgeInfoText}>
+                {layout.toUpperCase()} • DZ {Math.round(deadzone * 100)}% • SENS {stickSensitivity.toFixed(1)}×
+              </Text>
             </View>
-
-            {/* Glowing Center Controller Badge */}
-            <View style={styles.centerBadge}>
-              <View style={styles.centerBadgeDot} />
-              <Text style={styles.centerBadgeText}>PRO CONTROLLER</Text>
-            </View>
-
-            {/* Safety Release Panic Button */}
-            <TouchableOpacity
-              style={styles.centerUtilityBtn}
-              onPress={() => {
-                socketService.gamepadReleaseAll();
-                hapticsService.light();
-              }}
-              activeOpacity={0.8}
-              focusable={false}
-            >
-              <Text style={styles.centerUtilityText}>SAFETY RELEASE</Text>
-            </TouchableOpacity>
           </View>
 
-          {/* ================= RIGHT CONTROLLER WING ================= */}
-          <View style={[styles.wing, layout === 'arc' && styles.wingArcRight]}>
-            {/* Action Diamond ABXY with Pro Console Jewel Styling */}
-            <View style={[styles.wingUpper, layout === 'arc' && styles.arcUpperRight]}>
-              <View style={styles.diamondGrid}>
-                {/* Y Button (Top - Amber Yellow) */}
-                <TouchableOpacity
-                  style={[styles.jewelBtn, styles.btnY, activeButton === 'Y' && styles.btnYActive]}
-                  onPressIn={() => handleButtonPressIn('Y')}
-                  onPressOut={() => handleButtonPressOut('Y')}
-                  activeOpacity={1}
-                  focusable={false}
-                >
-                  <Text style={[styles.jewelBtnText, styles.textY]}>{getButtonText('Y')}</Text>
-                </TouchableOpacity>
-
-                {/* X Button (Left - Cobalt Blue) & B Button (Right - Crimson Red) */}
-                <View style={styles.diamondMidRow}>
-                  <TouchableOpacity
-                    style={[styles.jewelBtn, styles.btnX, activeButton === 'X' && styles.btnXActive]}
-                    onPressIn={() => handleButtonPressIn('X')}
-                    onPressOut={() => handleButtonPressOut('X')}
-                    activeOpacity={1}
-                    focusable={false}
-                  >
-                    <Text style={[styles.jewelBtnText, styles.textX]}>{getButtonText('X')}</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.jewelBtn, styles.btnB, activeButton === 'B' && styles.btnBActive]}
-                    onPressIn={() => handleButtonPressIn('B')}
-                    onPressOut={() => handleButtonPressOut('B')}
-                    activeOpacity={1}
-                    focusable={false}
-                  >
-                    <Text style={[styles.jewelBtnText, styles.textB]}>{getButtonText('B')}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* A Button (Bottom - Emerald Green) */}
-                <TouchableOpacity
-                  style={[styles.jewelBtn, styles.btnA, activeButton === 'A' && styles.btnAActive]}
-                  onPressIn={() => handleButtonPressIn('A')}
-                  onPressOut={() => handleButtonPressOut('A')}
-                  activeOpacity={1}
-                  focusable={false}
-                >
-                  <Text style={[styles.jewelBtnText, styles.textA]}>{getButtonText('A')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Right Analog Stick (Camera / Look Aim) */}
-            <View style={[styles.wingLower, layout === 'arc' && styles.arcLowerRight]}>
-              <ConcentricStick label="RS" isRightStick size={118} deadzone={deadzone} sensitivity={stickSensitivity} />
+          {/* Right Wing */}
+          <View style={[styles.wingLandscape, layout === 'arc' && styles.wingArcRight]}>
+            <View style={styles.wingCell}>{renderABXYCluster()}</View>
+            <View style={styles.wingCell}>
+              <ConcentricStick label="RS" isRightStick size={124} deadzone={deadzone} sensitivity={stickSensitivity} />
             </View>
           </View>
         </View>
-      </View>
+      ) : (
+        /* Native Portrait Console (Default) */
+        <View style={styles.consoleBodyPortrait}>
+          <View style={styles.portraitGrid}>
+            {/* Left Control Column (Thumbstick + D-Pad) */}
+            <View style={styles.portraitColumn}>
+              <View style={styles.portraitCell}>
+                <ConcentricStick label="LS" size={126} deadzone={deadzone} sensitivity={stickSensitivity} />
+              </View>
+              <View style={styles.portraitCell}>
+                <CloverDpad size={112} />
+              </View>
+            </View>
+
+            {/* Right Control Column (ABXY Diamond + Right Stick) */}
+            <View style={styles.portraitColumn}>
+              <View style={styles.portraitCell}>
+                {renderABXYCluster()}
+              </View>
+              <View style={styles.portraitCell}>
+                <ConcentricStick label="RS" isRightStick size={126} deadzone={deadzone} sensitivity={stickSensitivity} />
+              </View>
+            </View>
+          </View>
+
+          {/* Bottom Console Info Ribbon */}
+          <View style={styles.portraitFooter}>
+            <Text style={styles.portraitFooterText}>
+              Console Mode • Deadzone: {Math.round(deadzone * 100)}% • Sensitivity: {stickSensitivity.toFixed(1)}×
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Thumbstick Deadzone & Sensitivity Tuning Drawer Modal */}
       <Modal
@@ -493,7 +518,6 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
             activeOpacity={1}
             onPress={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
             <View style={styles.tuningHeader}>
               <View style={styles.tuningTitleRow}>
                 <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth={2.5}>
@@ -510,7 +534,7 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Deadzone Control */}
+            {/* Deadzone */}
             <View style={styles.tuningSection}>
               <View style={styles.tuningRowHeader}>
                 <Text style={styles.tuningSectionLabel}>Inner Deadzone</Text>
@@ -549,7 +573,7 @@ export const GamepadScreen: React.FC<GamepadScreenProps> = ({
               </View>
             </View>
 
-            {/* Aim Sensitivity Control */}
+            {/* Aim Sensitivity */}
             <View style={styles.tuningSection}>
               <View style={styles.tuningRowHeader}>
                 <Text style={styles.tuningSectionLabel}>Aim Sensitivity</Text>
@@ -607,82 +631,118 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0a0b10',
     paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingTop: 2,
+    paddingBottom: 4,
   },
   containerFullscreen: {
     paddingHorizontal: 2,
-    paddingVertical: 1,
+    paddingTop: 1,
+    paddingBottom: 2,
   },
 
-  // Curved Top Shoulder Bar
-  topShoulderBar: {
+  // Header Toolbar
+  headerToolbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 2,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 4,
+    marginBottom: 4,
   },
-  cornerGripLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  cornerGripRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-
-  // Corner Trigger & Bumper Styling
-  cornerTrigger: {
+  headerLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#161822',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    elevation: 4,
   },
-  cornerTriggerLeft: {
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 6,
-    borderTopRightRadius: 6,
-    borderBottomRightRadius: 12,
-    borderColor: 'rgba(96, 165, 250, 0.3)',
-  },
-  cornerTriggerRight: {
-    borderTopRightRadius: 18,
-    borderBottomRightRadius: 6,
-    borderTopLeftRadius: 6,
-    borderBottomLeftRadius: 12,
-    borderColor: 'rgba(96, 165, 250, 0.3)',
-  },
-  cornerBumper: {
+  headerRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#1b1d28',
-    paddingHorizontal: 11,
-    paddingVertical: 8,
+  },
+  gamepadBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  gamepadBadgeIcon: {
+    fontSize: 12,
+  },
+  gamepadBadgeText: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  headerPill: {
+    backgroundColor: '#161824',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  headerPillText: {
+    color: '#cbd5e1',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  orientationPillActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    borderColor: '#3b82f6',
+  },
+  orientationPillTextActive: {
+    color: '#60a5fa',
   },
 
+  // Top Shoulder Section
+  shoulderSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#12141f',
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 6,
+  },
+  shoulderPod: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  shoulderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  triggerBtn: {
+    backgroundColor: '#191c2b',
+    borderColor: 'rgba(96, 165, 250, 0.25)',
+  },
+  bumperBtn: {
+    backgroundColor: '#161824',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
   triggerActive: {
     backgroundColor: 'rgba(59, 130, 246, 0.35)',
     borderColor: '#60a5fa',
-    transform: [{ scale: 0.95 }],
+    transform: [{ scale: 0.96 }],
   },
   bumperActive: {
     backgroundColor: 'rgba(79, 140, 255, 0.3)',
     borderColor: '#60a5fa',
-    transform: [{ scale: 0.95 }],
+    transform: [{ scale: 0.96 }],
   },
-
   triggerBadge: {
     fontSize: 9.5,
     fontWeight: '800',
@@ -702,106 +762,109 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   shoulderBtnText: {
-    color: '#f1f5f9',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-
-  // Center Control Toolbar
-  centerControlGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  layoutToggle: {
-    backgroundColor: '#181a24',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-  },
-  layoutToggleLabel: {
-    fontSize: 8,
-    color: '#64748b',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  layoutToggleText: {
-    color: '#60a5fa',
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  tuningBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#181a24',
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  tuningBtnText: {
-    color: '#cbd5e1',
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  labelModePill: {
-    backgroundColor: '#181a24',
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  labelModeText: {
-    color: '#94a3b8',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  fullscreenToggle: {
-    backgroundColor: '#181a24',
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  fullscreenToggleActive: {
-    backgroundColor: 'rgba(52, 211, 153, 0.2)',
-    borderColor: '#34d399',
-  },
-  fullscreenToggleText: {
     color: '#e2e8f0',
     fontSize: 10.5,
     fontWeight: '700',
   },
-  fullscreenToggleTextActive: {
-    color: '#34d399',
+
+  // System Navigation Center
+  systemNavCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  systemNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1a1c28',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  systemNavBtnActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+    borderColor: '#60a5fa',
+  },
+  systemNavIcon: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  systemNavText: {
+    color: '#cbd5e1',
+    fontSize: 9.5,
+    fontWeight: '700',
+  },
+  consoleLogoBadge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#1e2130',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  logoDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#3b82f6',
   },
 
-  // Handheld Console Body
-  consoleBody: {
+  // ================= PORTRAIT CONSOLE STYLES =================
+  consoleBodyPortrait: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
-  layoutContainer: {
+  portraitGrid: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  portraitColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    height: '100%',
+  },
+  portraitCell: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  portraitFooter: {
+    alignItems: 'center',
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  portraitFooterText: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  // ================= LANDSCAPE CONSOLE STYLES =================
+  consoleBodyLandscape: {
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 8,
   },
-  wing: {
-    width: 145,
+  wingLandscape: {
+    width: 150,
     height: '100%',
     justifyContent: 'space-evenly',
     alignItems: 'center',
-    paddingVertical: 4,
   },
   wingArcLeft: {
     paddingLeft: 4,
@@ -809,111 +872,34 @@ const styles = StyleSheet.create({
   wingArcRight: {
     paddingRight: 4,
   },
-  wingUpper: {
-    height: 125,
-    justifyContent: 'center',
+  wingCell: {
     alignItems: 'center',
-  },
-  wingLower: {
-    height: 125,
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  arcUpperLeft: {
-    transform: [{ translateX: -6 }],
-  },
-  arcLowerLeft: {
-    transform: [{ translateX: 8 }],
-  },
-  arcUpperRight: {
-    transform: [{ translateX: 6 }],
-  },
-  arcLowerRight: {
-    transform: [{ translateX: -8 }],
-  },
-
-  // Center Deck
-  centerDeck: {
+  centerBridgeLandscape: {
     flex: 1,
-    height: '100%',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  centerNavRow: {
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center',
-  },
-  centerNavBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#181a24',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 8,
-    paddingVertical: 6,
+  },
+  bridgeInfoPill: {
     paddingHorizontal: 12,
-    minWidth: 62,
-  },
-  centerNavBtnActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.25)',
-    borderColor: '#60a5fa',
-    transform: [{ scale: 0.95 }],
-  },
-  centerNavIcon: {
-    color: '#cbd5e1',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  centerNavLabel: {
-    color: '#94a3b8',
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  centerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    paddingVertical: 6,
+    borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  centerBadgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#3b82f6',
-  },
-  centerBadgeText: {
-    color: '#94a3b8',
+  bridgeInfoText: {
+    color: '#64748b',
     fontSize: 9.5,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.8,
-  },
-  centerUtilityBtn: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  centerUtilityText: {
-    color: '#f87171',
-    fontSize: 9.5,
-    fontWeight: '700',
-    letterSpacing: 0.5,
   },
 
   // Pro Console Jewel Style ABXY Diamond
   diamondGrid: {
-    width: 132,
-    height: 132,
+    width: 126,
+    height: 126,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -921,12 +907,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginVertical: 4,
+    marginVertical: 3,
   },
   jewelBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#181a24',
     borderWidth: 2,
     borderBottomWidth: 3.5,
@@ -978,9 +964,8 @@ const styles = StyleSheet.create({
     borderColor: '#fbbf24',
     transform: [{ translateY: 2 }, { scale: 0.95 }],
   },
-
   jewelBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
@@ -992,7 +977,7 @@ const styles = StyleSheet.create({
   // Tuning Drawer Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -1059,7 +1044,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#60a5fa',
   },
-
   sliderHitBox: {
     height: 36,
     justifyContent: 'center',

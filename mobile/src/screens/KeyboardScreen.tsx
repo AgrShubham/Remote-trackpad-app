@@ -5,10 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   PanResponder,
+  GestureResponderEvent,
 } from 'react-native';
-import Svg, { Path, Rect, Circle, Defs, Pattern } from 'react-native-svg';
+import Svg, { Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { Keycap } from '../components/Keycap';
@@ -31,40 +31,199 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
   const [isCtrlLatched, setIsCtrlLatched] = useState(false);
   const [isAltLatched, setIsAltLatched] = useState(false);
   const [isQuickTextOpen, setIsQuickTextOpen] = useState(false);
-  const [showMiniTouchpad, setShowMiniTouchpad] = useState(true);
 
-  // Mini-Touchpad gesture handler
-  const miniLastX = useRef(0);
-  const miniLastY = useRef(0);
-  const miniTouchStartTime = useRef(0);
-  const miniHasMoved = useRef(false);
+  // Trackpad States
+  const [speed, setSpeed] = useState<number>(1.4);
+  const [leftActive, setLeftActive] = useState<boolean>(false);
+  const [rightActive, setRightActive] = useState<boolean>(false);
 
-  const miniTouchpadPanResponder = useRef(
+  // Precision Trackpad Gesture Engine
+  const lastTouchTime = useRef<number>(0);
+  const lastTouchX = useRef<number>(0);
+  const lastTouchY = useRef<number>(0);
+  const touchStartTime = useRef<number>(0);
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
+  const maxTouches = useRef<number>(0);
+  const prevTouchCount = useRef<number>(0);
+  const isScrolling = useRef<boolean>(false);
+  const isDraggingRef = useRef<boolean>(false);
+
+  const lastScrollY = useRef<number>(0);
+  const inertiaRaf = useRef<number | null>(null);
+
+  const speedRef = useRef<number>(speed);
+  speedRef.current = speed;
+
+  const cancelInertia = () => {
+    if (inertiaRaf.current !== null) {
+      cancelAnimationFrame(inertiaRaf.current);
+      inertiaRaf.current = null;
+    }
+  };
+
+  const startInertia = (initialVy: number) => {
+    cancelInertia();
+    let vy = initialVy;
+    const loop = () => {
+      if (Math.abs(vy) < 0.05) {
+        inertiaRaf.current = null;
+        return;
+      }
+      socketService.scroll(0, vy);
+      vy *= 0.92;
+      inertiaRaf.current = requestAnimationFrame(loop);
+    };
+    inertiaRaf.current = requestAnimationFrame(loop);
+  };
+
+  // Center Vertical Scroll Strip PanResponder (single finger direct wheel)
+  const scrollStripLastY = useRef<number>(0);
+  const scrollStripPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        miniLastX.current = evt.nativeEvent.pageX;
-        miniLastY.current = evt.nativeEvent.pageY;
-        miniTouchStartTime.current = Date.now();
-        miniHasMoved.current = false;
+        scrollStripLastY.current = evt.nativeEvent.pageY;
+        hapticsService.light();
       },
       onPanResponderMove: (evt) => {
-        const dx = evt.nativeEvent.pageX - miniLastX.current;
-        const dy = evt.nativeEvent.pageY - miniLastY.current;
-        miniLastX.current = evt.nativeEvent.pageX;
-        miniLastY.current = evt.nativeEvent.pageY;
-
-        if (Math.abs(dx) > 0.6 || Math.abs(dy) > 0.6) {
-          miniHasMoved.current = true;
-          socketService.move(dx * 1.6, dy * 1.6);
+        const delta = scrollStripLastY.current - evt.nativeEvent.pageY;
+        scrollStripLastY.current = evt.nativeEvent.pageY;
+        if (Math.abs(delta) > 0.4) {
+          socketService.scroll(0, delta * 2.2);
         }
       },
-      onPanResponderRelease: () => {
-        const duration = Date.now() - miniTouchStartTime.current;
-        if (!miniHasMoved.current && duration < 250) {
-          socketService.click('left');
+    })
+  ).current;
+
+  // Velocity Ballistics
+  const computeAcceleratedDelta = (rawDx: number, rawDy: number) => {
+    const dist = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+    if (dist < 0.05) return { dx: 0, dy: 0 };
+
+    const multiplier = speedRef.current;
+    let factor: number;
+    if (dist < 1.5) {
+      factor = 1.0;
+    } else if (dist < 6.0) {
+      factor = 1.0 + Math.pow((dist - 1.5) / 4.5, 1.2) * 1.2;
+    } else {
+      factor = 2.2 + Math.min(Math.pow((dist - 6.0) / 6.0, 1.1) * 1.3, 1.3);
+    }
+
+    return {
+      dx: rawDx * factor * multiplier,
+      dy: rawDy * factor * multiplier,
+    };
+  };
+
+  const trackpadPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+
+      onPanResponderGrant: (evt: GestureResponderEvent) => {
+        cancelInertia();
+        const now = Date.now();
+        const touches = evt.nativeEvent.touches;
+        const numTouches = touches.length;
+
+        maxTouches.current = numTouches;
+        prevTouchCount.current = numTouches;
+        isScrolling.current = false;
+
+        touchStartTime.current = now;
+        lastTouchTime.current = now;
+
+        if (numTouches === 1) {
+          const x = touches[0].pageX;
+          const y = touches[0].pageY;
+          touchStartX.current = x;
+          touchStartY.current = y;
+          lastTouchX.current = x;
+          lastTouchY.current = y;
+        } else if (numTouches === 2) {
+          const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+          lastScrollY.current = avgY;
+        }
+      },
+
+      onPanResponderMove: (evt: GestureResponderEvent) => {
+        const now = Date.now();
+        const touches = evt.nativeEvent.touches;
+        const numTouches = touches.length;
+
+        if (numTouches > maxTouches.current) {
+          maxTouches.current = numTouches;
+        }
+
+        if (numTouches !== prevTouchCount.current) {
+          prevTouchCount.current = numTouches;
+          if (numTouches === 1) {
+            lastTouchX.current = touches[0].pageX;
+            lastTouchY.current = touches[0].pageY;
+            lastTouchTime.current = now;
+          } else if (numTouches === 2) {
+            lastScrollY.current = (touches[0].pageY + touches[1].pageY) / 2;
+          }
+          return;
+        }
+
+        // Two-Finger Natural Scrolling
+        if (numTouches === 2) {
+          const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+          const deltaY = lastScrollY.current - avgY;
+          lastScrollY.current = avgY;
+
+          if (Math.abs(deltaY) > 0.4) {
+            isScrolling.current = true;
+            const scrollScale = 1.8;
+            socketService.scroll(0, deltaY * scrollScale);
+          }
+          return;
+        }
+
+        // Single-Finger Precision Cursor Tracking
+        if (numTouches === 1) {
+          const x = touches[0].pageX;
+          const y = touches[0].pageY;
+          const rawDx = x - lastTouchX.current;
+          const rawDy = y - lastTouchY.current;
+
+          lastTouchX.current = x;
+          lastTouchY.current = y;
+          lastTouchTime.current = now;
+
+          if (Math.abs(rawDx) > 0.1 || Math.abs(rawDy) > 0.1) {
+            const { dx, dy } = computeAcceleratedDelta(rawDx, rawDy);
+            socketService.move(dx, dy);
+          }
+        }
+      },
+
+      onPanResponderRelease: (evt: GestureResponderEvent) => {
+        const now = Date.now();
+        const duration = now - touchStartTime.current;
+        const highestTouchCount = maxTouches.current;
+
+        // Two-Finger Tap -> Right Click
+        if (highestTouchCount === 2 && !isScrolling.current && duration < 320) {
+          socketService.click('right');
           hapticsService.light();
+          return;
+        }
+
+        // Single-Finger Tap -> Left Click
+        if (highestTouchCount === 1) {
+          const totalDx = Math.abs(evt.nativeEvent.pageX - touchStartX.current);
+          const totalDy = Math.abs(evt.nativeEvent.pageY - touchStartY.current);
+          const totalDist = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+
+          if (totalDist < 8 && duration < 280) {
+            socketService.click('left');
+            hapticsService.light();
+          }
         }
       },
     })
@@ -149,7 +308,6 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
     if (specialKeys.includes(code.toLowerCase())) {
       socketService.key(code.toLowerCase(), 'tap');
     } else {
-      // Normal character keys
       let charToSend = code;
       if (charToSend.length === 1) {
         charToSend = isShifted ? charToSend.toUpperCase() : charToSend.toLowerCase();
@@ -157,12 +315,9 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
       socketService.key(charToSend, 'tap');
     }
 
-    // Unlatch Shift if single-press active
     if (isShiftActive) {
       setIsShiftActive(false);
     }
-
-    // Release latched Ctrl/Alt after combo
     if (isCtrlLatched) {
       setIsCtrlLatched(false);
       socketService.key('ctrl', 'release');
@@ -175,35 +330,94 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
 
   return (
     <View style={[styles.container, isFullscreen && styles.containerFullscreen]}>
-      {/* Top Utility Ribbon */}
-      <View style={styles.utilityRibbon}>
-        {/* Back to Hub Button */}
-        {onBack && (
+      {/* ================= 1. UPPER PRECISION TRACKPAD (flex: 1) ================= */}
+      <View style={styles.trackpadSection}>
+        <View style={styles.touchSurface} {...trackpadPanResponder.panHandlers}>
+          {/* Subtle Dot Matrix Pattern */}
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+            <Svg width="100%" height="100%">
+              <Defs>
+                <Pattern id="kb-trackpad-dots" width="16" height="16" patternUnits="userSpaceOnUse">
+                  <Circle cx="8" cy="8" r="1.1" fill="rgba(255, 255, 255, 0.08)" />
+                </Pattern>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#kb-trackpad-dots)" />
+            </Svg>
+          </View>
+
+          {/* Centered Ergonomic Gesture Guide */}
+          <View style={styles.gestureHintBadge} pointerEvents="none">
+            <Text style={styles.gestureHintText}>
+              • 1 Finger: Move & Tap Click  • 2 Fingers: Drag Scroll & Right-Click
+            </Text>
+          </View>
+        </View>
+
+        {/* Integrated Trackpad Action Strip (Click buttons + Vertical Scroll Wheel + Speed) */}
+        <View style={styles.trackpadActionStrip}>
           <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
+            style={[styles.clickBtn, leftActive && styles.clickBtnActive]}
+            onPressIn={() => {
+              setLeftActive(true);
+              socketService.mouseDown('left');
               hapticsService.light();
-              onBack();
+            }}
+            onPressOut={() => {
+              setLeftActive(false);
+              socketService.mouseUp('left');
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.clickBtnText}>🖱️ Left</Text>
+          </TouchableOpacity>
+
+          {/* Direct Vertical Scroll Slider */}
+          <View style={styles.scrollStrip} {...scrollStripPanResponder.panHandlers}>
+            <Text style={styles.scrollStripText}>↕ SCROLL</Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.clickBtn, rightActive && styles.clickBtnActive]}
+            onPressIn={() => {
+              setRightActive(true);
+              socketService.mouseDown('right');
+              hapticsService.light();
+            }}
+            onPressOut={() => {
+              setRightActive(false);
+              socketService.mouseUp('right');
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.clickBtnText}>Right 🖱️</Text>
+          </TouchableOpacity>
+
+          {/* Sensitivity Speed Pill */}
+          <TouchableOpacity
+            style={styles.speedPill}
+            onPress={() => {
+              const next = speed === 1.0 ? 1.4 : speed === 1.4 ? 2.0 : 1.0;
+              setSpeed(next);
+              hapticsService.light();
             }}
             activeOpacity={0.8}
           >
-            <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-              <Path d="M19 12H5M12 19l-7-7 7-7" />
-            </Svg>
-            <Text style={styles.backBtnText}>Hub</Text>
+            <Text style={styles.speedPillText}>{speed}×</Text>
           </TouchableOpacity>
-        )}
+        </View>
+      </View>
 
-        {/* Essential PC Utility Keycaps */}
-        <View style={styles.utilityKeyGroup}>
-          <Keycap label="Esc" code="esc" widthFactor={1.1} height={36} type="utility" accentColor="#f87171" onPress={handleKeyPress} />
-          <Keycap label="Tab ⇥" code="tab" widthFactor={1.2} height={36} type="utility" onPress={handleKeyPress} />
-          <Keycap label="Del" code="delete" widthFactor={1.1} height={36} type="utility" onPress={handleKeyPress} />
+      {/* ================= 2. MIDDLE UTILITY RIBBON (Above Keyboard) ================= */}
+      <View style={styles.utilityRibbon}>
+        <View style={styles.utilityLeftGroup}>
+          <Keycap label="⎋ Esc" code="esc" widthFactor={1.0} height={35} type="utility" accentColor="#f87171" onPress={handleKeyPress} />
+          <Keycap label="⇥ Tab" code="tab" widthFactor={1.0} height={35} type="utility" onPress={handleKeyPress} />
+          <Keycap label="⌦ Del" code="delete" widthFactor={1.0} height={35} type="utility" onPress={handleKeyPress} />
           <Keycap
             label="Caps"
             code="caps_lock"
-            widthFactor={1.2}
-            height={36}
+            widthFactor={1.0}
+            height={35}
             hasLed
             ledOn={isCapsActive}
             type="utility"
@@ -211,140 +425,38 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
           />
         </View>
 
-        {/* Right Action Controls */}
-        <View style={styles.utilityActionGroup}>
-          {/* Mini-Touchpad Toggle Pill */}
+        <View style={styles.utilityRightGroup}>
+          {/* Quick Text Input Drawer Toggle */}
           <TouchableOpacity
-            style={[styles.actionPill, showMiniTouchpad && styles.actionPillActive]}
-            onPress={() => {
-              setShowMiniTouchpad(!showMiniTouchpad);
-              hapticsService.light();
-            }}
-            activeOpacity={0.8}
-            focusable={false}
-          >
-            <Text style={[styles.actionPillText, showMiniTouchpad && styles.actionPillTextActive]}>
-              🖱️ Pad
-            </Text>
-          </TouchableOpacity>
-
-          {/* Quick Text Drawer Button */}
-          <TouchableOpacity
-            style={[styles.actionPill, isQuickTextOpen && styles.actionPillActive]}
+            style={[styles.utilityActionBtn, isQuickTextOpen && styles.utilityActionBtnActive]}
             onPress={() => {
               setIsQuickTextOpen(!isQuickTextOpen);
               hapticsService.light();
             }}
             activeOpacity={0.8}
-            focusable={false}
           >
-            <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={isQuickTextOpen ? '#60a5fa' : '#cbd5e1'} strokeWidth={2.5}>
-              <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </Svg>
-            <Text style={[styles.actionPillText, isQuickTextOpen && styles.actionPillTextActive]}>Text</Text>
+            <Text style={[styles.utilityActionBtnText, isQuickTextOpen && styles.utilityActionBtnTextActive]}>
+              📋 Text
+            </Text>
           </TouchableOpacity>
 
-          {/* Deck Switcher Button */}
+          {/* QWERTY vs Nav/F-Keys Switcher */}
           <TouchableOpacity
-            style={[styles.actionPill, activeDeck === 'nav' && styles.deckPillActive]}
+            style={[styles.utilityActionBtn, activeDeck === 'nav' && styles.deckPillActive]}
             onPress={() => {
               setActiveDeck(activeDeck === 'qwerty' ? 'nav' : 'qwerty');
               hapticsService.light();
             }}
             activeOpacity={0.8}
-            focusable={false}
           >
-            <Text style={[styles.actionPillText, activeDeck === 'nav' && styles.deckPillTextActive]}>
-              {activeDeck === 'qwerty' ? '⚡ Nav/F' : '🔤 QWERTY'}
+            <Text style={[styles.utilityActionBtnText, activeDeck === 'nav' && styles.deckPillTextActive]}>
+              {activeDeck === 'qwerty' ? '⚡ F-Keys' : '🔤 QWERTY'}
             </Text>
           </TouchableOpacity>
-
-          {/* Fullscreen Button */}
-          {onToggleFullscreen && (
-            <TouchableOpacity
-              style={[styles.fullscreenBtn, isFullscreen && styles.fullscreenBtnActive]}
-              onPress={onToggleFullscreen}
-              activeOpacity={0.8}
-              focusable={false}
-            >
-              <Text style={[styles.fullscreenBtnText, isFullscreen && styles.fullscreenBtnTextActive]}>
-                {isFullscreen ? '✕ Exit' : '⛶'}
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
-      {/* Integrated Mini-Touchpad Surface */}
-      {showMiniTouchpad && !isFullscreen && (
-        <View style={styles.miniTouchpadContainer}>
-          <View style={styles.miniTouchSurface} {...miniTouchpadPanResponder.panHandlers}>
-            <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-              <Svg width="100%" height="100%">
-                <Defs>
-                  <Pattern id="mini-touchpad-dots" width="16" height="16" patternUnits="userSpaceOnUse">
-                    <Circle cx="8" cy="8" r="1.1" fill="rgba(255, 255, 255, 0.08)" />
-                  </Pattern>
-                </Defs>
-                <Rect width="100%" height="100%" fill="url(#mini-touchpad-dots)" />
-              </Svg>
-            </View>
-            <View pointerEvents="none">
-              <Text style={styles.miniTouchHint}>
-                Mini-Touchpad • Drag cursor • Tap to click
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.miniSideBar}>
-            <TouchableOpacity
-              style={styles.miniSideBtn}
-              onPress={() => {
-                socketService.click('left');
-                hapticsService.light();
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.miniSideBtnText}>Left</Text>
-            </TouchableOpacity>
-            <View style={styles.miniScrollCol}>
-              <TouchableOpacity
-                style={styles.miniScrollBtn}
-                onPress={() => {
-                  socketService.scroll(0, 15);
-                  hapticsService.light();
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.miniScrollBtnText}>▲</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.miniScrollBtn}
-                onPress={() => {
-                  socketService.scroll(0, -15);
-                  hapticsService.light();
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.miniScrollBtnText}>▼</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              style={styles.miniSideBtn}
-              onPress={() => {
-                socketService.click('right');
-                hapticsService.light();
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.miniSideBtnText}>Right</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Expandable Quick-Text Field Drawer */}
+      {/* Expandable Direct Text Drawer */}
       {isQuickTextOpen && (
         <View style={styles.quickTextDrawer}>
           <TextInput
@@ -361,232 +473,224 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
             style={styles.sendBtn}
             onPress={handleSendText}
             activeOpacity={0.85}
-            focusable={false}
           >
-            <Text style={styles.sendBtnText}>Send</Text>
+            <Text style={styles.sendBtnText}>Send ↵</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Edge-to-Edge Mechanical Keyboard Chassis */}
-      <ScrollView
-        contentContainerStyle={styles.chassisScrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-      >
-        <View style={styles.keyboardChassis}>
-          {activeDeck === 'qwerty' ? (
-            /* ================= QWERTY Stretched Mobile Layout ================= */
-            <>
-              {/* Row 1: Number & Shift Symbol Row */}
-              <View style={styles.row}>
-                <Keycap label="1" subLabel="!" code="1" height={42} onPress={handleKeyPress} />
-                <Keycap label="2" subLabel="@" code="2" height={42} onPress={handleKeyPress} />
-                <Keycap label="3" subLabel="#" code="3" height={42} onPress={handleKeyPress} />
-                <Keycap label="4" subLabel="$" code="4" height={42} onPress={handleKeyPress} />
-                <Keycap label="5" subLabel="%" code="5" height={42} onPress={handleKeyPress} />
-                <Keycap label="6" subLabel="^" code="6" height={42} onPress={handleKeyPress} />
-                <Keycap label="7" subLabel="&" code="7" height={42} onPress={handleKeyPress} />
-                <Keycap label="8" subLabel="*" code="8" height={42} onPress={handleKeyPress} />
-                <Keycap label="9" subLabel="(" code="9" height={42} onPress={handleKeyPress} />
-                <Keycap label="0" subLabel=")" code="0" height={42} onPress={handleKeyPress} />
-              </View>
+      {/* ================= 3. BOTTOM-DOCKED GBOARD KEYBOARD CHASSIS ================= */}
+      <View style={styles.keyboardChassis}>
+        {activeDeck === 'qwerty' ? (
+          <>
+            {/* Row 1: Numbers & Symbols */}
+            <View style={styles.row}>
+              <Keycap label="1" subLabel="!" code="1" height={40} onPress={handleKeyPress} />
+              <Keycap label="2" subLabel="@" code="2" height={40} onPress={handleKeyPress} />
+              <Keycap label="3" subLabel="#" code="3" height={40} onPress={handleKeyPress} />
+              <Keycap label="4" subLabel="$" code="4" height={40} onPress={handleKeyPress} />
+              <Keycap label="5" subLabel="%" code="5" height={40} onPress={handleKeyPress} />
+              <Keycap label="6" subLabel="^" code="6" height={40} onPress={handleKeyPress} />
+              <Keycap label="7" subLabel="&" code="7" height={40} onPress={handleKeyPress} />
+              <Keycap label="8" subLabel="*" code="8" height={40} onPress={handleKeyPress} />
+              <Keycap label="9" subLabel="(" code="9" height={40} onPress={handleKeyPress} />
+              <Keycap label="0" subLabel=")" code="0" height={40} onPress={handleKeyPress} />
+            </View>
 
-              {/* Row 2: QWERTY Row */}
-              <View style={styles.row}>
-                {['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'].map((k) => (
-                  <Keycap
-                    key={k}
-                    label={isShiftActive !== isCapsActive ? k : k.toLowerCase()}
-                    code={k.toLowerCase()}
-                    height={46}
-                    onPress={handleKeyPress}
-                  />
-                ))}
-              </View>
-
-              {/* Row 3: Home Row (A-L with half-key ergonomic stagger spacer) */}
-              <View style={styles.row}>
-                <View style={styles.spacerQuarter} />
-                {['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'].map((k) => (
-                  <Keycap
-                    key={k}
-                    label={isShiftActive !== isCapsActive ? k : k.toLowerCase()}
-                    code={k.toLowerCase()}
-                    height={46}
-                    onPress={handleKeyPress}
-                  />
-                ))}
-                <Keycap label=";" subLabel=":" code=";" height={46} onPress={handleKeyPress} />
-                <View style={styles.spacerQuarter} />
-              </View>
-
-              {/* Row 4: Shift & Bottom Letters & Backspace */}
-              <View style={styles.row}>
+            {/* Row 2: QWERTY */}
+            <View style={styles.row}>
+              {['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'].map((k) => (
                 <Keycap
-                  label="⇧ Shift"
-                  code="shift"
-                  widthFactor={1.35}
-                  height={46}
-                  type="modifier"
-                  hasLed
-                  ledOn={isShiftActive}
-                  isLatched={isShiftActive}
-                  onPress={handleKeyPress}
-                />
-                {['Z', 'X', 'C', 'V', 'B', 'N', 'M'].map((k) => (
-                  <Keycap
-                    key={k}
-                    label={isShiftActive !== isCapsActive ? k : k.toLowerCase()}
-                    code={k.toLowerCase()}
-                    height={46}
-                    onPress={handleKeyPress}
-                  />
-                ))}
-                <Keycap
-                  label="⌫"
-                  code="backspace"
-                  widthFactor={1.35}
-                  height={46}
-                  type="utility"
-                  accentColor="#fca5a5"
-                  onPress={handleKeyPress}
-                />
-              </View>
-
-              {/* Row 5: Thumb Modifiers & Full-Width Spacebar */}
-              <View style={styles.row}>
-                <Keycap
-                  label="Ctrl"
-                  code="ctrl"
-                  widthFactor={1.2}
-                  height={45}
-                  type="modifier"
-                  hasLed
-                  ledOn={isCtrlLatched}
-                  isLatched={isCtrlLatched}
-                  onPress={handleKeyPress}
-                />
-                <Keycap
-                  label="⊞ Win"
-                  code="cmd"
-                  widthFactor={1.1}
-                  height={45}
-                  type="modifier"
-                  onPress={handleKeyPress}
-                />
-                <Keycap
-                  label="Alt"
-                  code="alt"
-                  widthFactor={1.1}
-                  height={45}
-                  type="modifier"
-                  hasLed
-                  ledOn={isAltLatched}
-                  isLatched={isAltLatched}
-                  onPress={handleKeyPress}
-                />
-                <Keycap
-                  label="Space"
-                  code="space"
-                  widthFactor={3.8}
-                  height={45}
-                  type="spacebar"
-                  onPress={handleKeyPress}
-                />
-                <Keycap
-                  label="Enter ↵"
-                  code="enter"
-                  widthFactor={2.0}
-                  height={45}
-                  type="enter"
-                  onPress={handleKeyPress}
-                />
-              </View>
-
-              {/* Row 6: Dedicated Arrow Navigation Strip */}
-              <View style={styles.row}>
-                <Keycap label="Home" code="home" widthFactor={1.0} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="End" code="end" widthFactor={1.0} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="◀" code="left" widthFactor={1.3} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="▲" code="up" widthFactor={1.3} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="▼" code="down" widthFactor={1.3} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="▶" code="right" widthFactor={1.3} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="PgUp" code="page_up" widthFactor={1.0} height={40} type="utility" onPress={handleKeyPress} />
-                <Keycap label="PgDn" code="page_down" widthFactor={1.0} height={40} type="utility" onPress={handleKeyPress} />
-              </View>
-            </>
-          ) : (
-            /* ================= Function Keys & Navigation Grid ================= */
-            <>
-              {/* Row 1: F1 - F6 */}
-              <View style={styles.row}>
-                {['f1', 'f2', 'f3', 'f4', 'f5', 'f6'].map((f) => (
-                  <Keycap key={f} label={f.toUpperCase()} code={f} height={44} type="utility" onPress={handleKeyPress} />
-                ))}
-              </View>
-
-              {/* Row 2: F7 - F12 */}
-              <View style={styles.row}>
-                {['f7', 'f8', 'f9', 'f10', 'f11', 'f12'].map((f) => (
-                  <Keycap key={f} label={f.toUpperCase()} code={f} height={44} type="utility" onPress={handleKeyPress} />
-                ))}
-              </View>
-
-              {/* Row 3: PC Document Navigation */}
-              <View style={styles.row}>
-                <Keycap label="PrtSc" code="print_screen" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="Ins" code="insert" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="Home" code="home" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="End" code="end" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="PgUp" code="page_up" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="PgDn" code="page_down" height={42} type="utility" onPress={handleKeyPress} />
-              </View>
-
-              {/* Row 4: Instant PC Productivity Shortcuts */}
-              <View style={styles.row}>
-                <Keycap label="Win+D" code="shortcut_win_d" height={42} type="utility" accentColor="#60a5fa" onPress={handleKeyPress} />
-                <Keycap label="Alt+Tab" code="shortcut_alt_tab" height={42} type="utility" accentColor="#60a5fa" onPress={handleKeyPress} />
-                <Keycap label="Ctrl+C" code="shortcut_copy" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="Ctrl+V" code="shortcut_paste" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="Ctrl+Z" code="shortcut_undo" height={42} type="utility" onPress={handleKeyPress} />
-                <Keycap label="Ctrl+A" code="shortcut_select_all" height={42} type="utility" onPress={handleKeyPress} />
-              </View>
-
-              {/* Row 5: Navigation Directional Cluster & Enter */}
-              <View style={styles.row}>
-                <Keycap
-                  label="Ctrl"
-                  code="ctrl"
-                  widthFactor={1.2}
+                  key={k}
+                  label={isShiftActive !== isCapsActive ? k : k.toLowerCase()}
+                  code={k.toLowerCase()}
                   height={44}
-                  type="modifier"
-                  hasLed
-                  ledOn={isCtrlLatched}
-                  isLatched={isCtrlLatched}
                   onPress={handleKeyPress}
                 />
+              ))}
+            </View>
+
+            {/* Row 3: Home Row (A-L + ;) */}
+            <View style={styles.row}>
+              <View style={styles.spacerQuarter} />
+              {['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'].map((k) => (
                 <Keycap
-                  label="Alt"
-                  code="alt"
-                  widthFactor={1.2}
+                  key={k}
+                  label={isShiftActive !== isCapsActive ? k : k.toLowerCase()}
+                  code={k.toLowerCase()}
                   height={44}
-                  type="modifier"
-                  hasLed
-                  ledOn={isAltLatched}
-                  isLatched={isAltLatched}
                   onPress={handleKeyPress}
                 />
-                <Keycap label="◀" code="left" widthFactor={1.4} height={44} type="utility" onPress={handleKeyPress} />
-                <Keycap label="▲" code="up" widthFactor={1.4} height={44} type="utility" onPress={handleKeyPress} />
-                <Keycap label="▼" code="down" widthFactor={1.4} height={44} type="utility" onPress={handleKeyPress} />
-                <Keycap label="▶" code="right" widthFactor={1.4} height={44} type="utility" onPress={handleKeyPress} />
-                <Keycap label="Enter ↵" code="enter" widthFactor={1.8} height={44} type="enter" onPress={handleKeyPress} />
-              </View>
-            </>
-          )}
-        </View>
-      </ScrollView>
+              ))}
+              <Keycap label=";" subLabel=":" code=";" height={44} onPress={handleKeyPress} />
+              <View style={styles.spacerQuarter} />
+            </View>
+
+            {/* Row 4: Shift, Bottom Row Letters & Backspace */}
+            <View style={styles.row}>
+              <Keycap
+                label="⇧ Shift"
+                code="shift"
+                widthFactor={1.35}
+                height={44}
+                type="modifier"
+                hasLed
+                ledOn={isShiftActive}
+                isLatched={isShiftActive}
+                onPress={handleKeyPress}
+              />
+              {['Z', 'X', 'C', 'V', 'B', 'N', 'M'].map((k) => (
+                <Keycap
+                  key={k}
+                  label={isShiftActive !== isCapsActive ? k : k.toLowerCase()}
+                  code={k.toLowerCase()}
+                  height={44}
+                  onPress={handleKeyPress}
+                />
+              ))}
+              <Keycap
+                label="⌫"
+                code="backspace"
+                widthFactor={1.35}
+                height={44}
+                type="utility"
+                accentColor="#fca5a5"
+                onPress={handleKeyPress}
+              />
+            </View>
+
+            {/* Row 5: Modifiers, Spacebar & Enter */}
+            <View style={styles.row}>
+              <Keycap
+                label="Ctrl"
+                code="ctrl"
+                widthFactor={1.15}
+                height={43}
+                type="modifier"
+                hasLed
+                ledOn={isCtrlLatched}
+                isLatched={isCtrlLatched}
+                onPress={handleKeyPress}
+              />
+              <Keycap
+                label="⊞ Win"
+                code="cmd"
+                widthFactor={1.05}
+                height={43}
+                type="modifier"
+                onPress={handleKeyPress}
+              />
+              <Keycap
+                label="Alt"
+                code="alt"
+                widthFactor={1.05}
+                height={43}
+                type="modifier"
+                hasLed
+                ledOn={isAltLatched}
+                isLatched={isAltLatched}
+                onPress={handleKeyPress}
+              />
+              <Keycap
+                label="Space"
+                code="space"
+                widthFactor={3.6}
+                height={43}
+                type="spacebar"
+                onPress={handleKeyPress}
+              />
+              <Keycap
+                label="Enter ↵"
+                code="enter"
+                widthFactor={2.0}
+                height={43}
+                type="enter"
+                onPress={handleKeyPress}
+              />
+            </View>
+
+            {/* Row 6: Directional Arrows & Navigation Cluster */}
+            <View style={styles.row}>
+              <Keycap label="⇤ Home" code="home" widthFactor={1.1} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="End ⇥" code="end" widthFactor={1.1} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="◀" code="left" widthFactor={1.15} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="▲" code="up" widthFactor={1.15} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="▼" code="down" widthFactor={1.15} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="▶" code="right" widthFactor={1.15} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="⇞ PgUp" code="page_up" widthFactor={1.1} height={38} type="utility" onPress={handleKeyPress} />
+              <Keycap label="⇟ PgDn" code="page_down" widthFactor={1.1} height={38} type="utility" onPress={handleKeyPress} />
+            </View>
+          </>
+        ) : (
+          /* ================= Function Keys & Navigation Deck ================= */
+          <>
+            {/* Row 1: F1 - F6 */}
+            <View style={styles.row}>
+              {['f1', 'f2', 'f3', 'f4', 'f5', 'f6'].map((f) => (
+                <Keycap key={f} label={f.toUpperCase()} code={f} height={42} type="utility" onPress={handleKeyPress} />
+              ))}
+            </View>
+
+            {/* Row 2: F7 - F12 */}
+            <View style={styles.row}>
+              {['f7', 'f8', 'f9', 'f10', 'f11', 'f12'].map((f) => (
+                <Keycap key={f} label={f.toUpperCase()} code={f} height={42} type="utility" onPress={handleKeyPress} />
+              ))}
+            </View>
+
+            {/* Row 3: PC Document Control */}
+            <View style={styles.row}>
+              <Keycap label="PrtSc" code="print_screen" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="Ins" code="insert" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="Home" code="home" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="End" code="end" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="PgUp" code="page_up" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="PgDn" code="page_down" height={40} type="utility" onPress={handleKeyPress} />
+            </View>
+
+            {/* Row 4: Essential Windows Shortcuts */}
+            <View style={styles.row}>
+              <Keycap label="Win+D" code="shortcut_win_d" height={40} type="utility" accentColor="#60a5fa" onPress={handleKeyPress} />
+              <Keycap label="Alt+Tab" code="shortcut_alt_tab" height={40} type="utility" accentColor="#60a5fa" onPress={handleKeyPress} />
+              <Keycap label="Ctrl+C" code="shortcut_copy" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="Ctrl+V" code="shortcut_paste" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="Ctrl+Z" code="shortcut_undo" height={40} type="utility" onPress={handleKeyPress} />
+              <Keycap label="Ctrl+A" code="shortcut_select_all" height={40} type="utility" onPress={handleKeyPress} />
+            </View>
+
+            {/* Row 5: Directional Inverted-T Cluster & Enter */}
+            <View style={styles.row}>
+              <Keycap
+                label="Ctrl"
+                code="ctrl"
+                widthFactor={1.15}
+                height={42}
+                type="modifier"
+                hasLed
+                ledOn={isCtrlLatched}
+                isLatched={isCtrlLatched}
+                onPress={handleKeyPress}
+              />
+              <Keycap
+                label="Alt"
+                code="alt"
+                widthFactor={1.15}
+                height={42}
+                type="modifier"
+                hasLed
+                ledOn={isAltLatched}
+                isLatched={isAltLatched}
+                onPress={handleKeyPress}
+              />
+              <Keycap label="◀" code="left" widthFactor={1.3} height={42} type="utility" onPress={handleKeyPress} />
+              <Keycap label="▲" code="up" widthFactor={1.3} height={42} type="utility" onPress={handleKeyPress} />
+              <Keycap label="▼" code="down" widthFactor={1.3} height={42} type="utility" onPress={handleKeyPress} />
+              <Keycap label="▶" code="right" widthFactor={1.3} height={42} type="utility" onPress={handleKeyPress} />
+              <Keycap label="Enter ↵" code="enter" widthFactor={1.8} height={42} type="enter" onPress={handleKeyPress} />
+            </View>
+          </>
+        )}
+      </View>
     </View>
   );
 };
@@ -594,136 +698,140 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0c10',
+    backgroundColor: '#0a0b10',
     paddingHorizontal: 4,
-    paddingVertical: 4,
-    justifyContent: 'flex-start',
+    paddingTop: 2,
+    paddingBottom: 4,
+    justifyContent: 'space-between',
   },
   containerFullscreen: {
     paddingHorizontal: 2,
-    paddingVertical: 2,
+    paddingTop: 1,
+    paddingBottom: 2,
   },
 
-  // Top Compact Utility Ribbon
-  utilityRibbon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 4,
-    paddingVertical: 2,
-    paddingHorizontal: 2,
-    marginBottom: 4,
-    width: '100%',
-  },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 7,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    marginRight: 4,
-  },
-  backBtnText: {
-    color: '#cbd5e1',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  miniTouchpadContainer: {
-    flexDirection: 'row',
-    height: 84,
+  // Upper Precision Trackpad (flex: 1)
+  trackpadSection: {
+    flex: 1,
     backgroundColor: '#12141f',
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 6,
     overflow: 'hidden',
+    position: 'relative',
   },
-  miniTouchSurface: {
+  touchSurface: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    backgroundColor: '#0d0f17',
+    backgroundColor: '#0e1017',
   },
-  miniTouchHint: {
+  gestureHintBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(18, 20, 31, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  gestureHintText: {
     fontSize: 10,
     color: '#64748b',
     fontWeight: '600',
     letterSpacing: 0.2,
   },
-  miniSideBar: {
-    width: 90,
+
+  // Trackpad Bottom Action Strip
+  trackpadActionStrip: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    backgroundColor: '#161824',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255, 255, 255, 0.08)',
+    height: 40,
+    backgroundColor: '#151724',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
-  miniSideBtn: {
+  clickBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
-  miniSideBtnText: {
-    fontSize: 11,
+  clickBtnActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  clickBtnText: {
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#94a3b8',
+    color: '#cbd5e1',
   },
-  miniScrollCol: {
-    width: 26,
-    flexDirection: 'column',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  miniScrollBtn: {
-    flex: 1,
+  scrollStrip: {
+    width: 82,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    backgroundColor: 'rgba(96, 165, 250, 0.08)',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  miniScrollBtnText: {
-    fontSize: 9,
+  scrollStripText: {
+    fontSize: 9.5,
+    fontWeight: '800',
     color: '#60a5fa',
-    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  utilityKeyGroup: {
+  speedPill: {
+    paddingHorizontal: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  speedPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94a3b8',
+  },
+
+  // Middle Utility Ribbon
+  utilityRibbon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+    paddingHorizontal: 2,
+  },
+  utilityLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    maxWidth: 220,
+    maxWidth: 240,
   },
-  utilityActionGroup: {
+  utilityRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  actionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  utilityActionBtn: {
     paddingVertical: 7,
-    paddingHorizontal: 9,
+    paddingHorizontal: 10,
     borderRadius: 7,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
   },
-  actionPillActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  utilityActionBtnActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.22)',
     borderColor: '#3b82f6',
   },
-  actionPillText: {
+  utilityActionBtnText: {
     color: '#cbd5e1',
     fontSize: 11,
     fontWeight: '700',
   },
-  actionPillTextActive: {
+  utilityActionBtnTextActive: {
     color: '#60a5fa',
   },
   deckPillActive: {
@@ -733,34 +841,14 @@ const styles = StyleSheet.create({
   deckPillTextActive: {
     color: '#60a5fa',
   },
-  fullscreenBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 7,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  fullscreenBtnActive: {
-    backgroundColor: 'rgba(52, 211, 153, 0.2)',
-    borderColor: '#34d399',
-  },
-  fullscreenBtnText: {
-    color: '#94a3b8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  fullscreenBtnTextActive: {
-    color: '#34d399',
-  },
 
-  // Expandable Quick Text Drawer
+  // Quick Text Drawer
   quickTextDrawer: {
     flexDirection: 'row',
     gap: 6,
     paddingVertical: 4,
     paddingHorizontal: 2,
-    marginBottom: 4,
+    marginBottom: 5,
   },
   textInput: {
     flex: 1,
@@ -786,11 +874,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Chassis & Key Rows
-  chassisScrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
+  // Docked Keyboard Chassis
   keyboardChassis: {
     width: '100%',
     backgroundColor: '#0e1017',

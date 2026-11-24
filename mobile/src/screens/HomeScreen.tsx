@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 28,
+    paddingBottom: 100,
   },
   topBar: {
     paddingVertical: 10,

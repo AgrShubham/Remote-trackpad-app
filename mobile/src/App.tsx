@@ -7,6 +7,7 @@ import {
   View,
   TouchableOpacity,
   Modal,
+  Platform,
 } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { CyberTokens } from './theme/cyberTokens';
@@ -165,7 +166,7 @@ export default function App() {
   // 3. Main Application Hub & Decks
   return (
     <SafeAreaView style={[styles.container, isFullscreen && styles.containerFullscreen]}>
-      <StatusBar hidden={isFullscreen} barStyle="light-content" backgroundColor={CyberTokens.bgObsidian} />
+      <StatusBar hidden={isFullscreen} barStyle="light-content" backgroundColor="transparent" translucent={true} />
 
       {/* Main Content Area */}
       <View style={[styles.content, isFullscreen && styles.contentFullscreen]}>
@@ -345,6 +346,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: CyberTokens.bgObsidian,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0,
   },
   containerFullscreen: {
     paddingTop: 0,
