@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { CyberTokens } from './theme/cyberTokens';
 import { socketService, ConnectionStatus } from './services/SocketService';
 import { autoConnectService } from './services/AutoConnectService';
@@ -112,6 +113,55 @@ export default function App() {
     { id: 'shortcuts', label: 'Macros' },
   ];
 
+  const renderDeckIcon = (deck: ControlDeckType, active: boolean, accentColor: string) => {
+    const iconColor = active ? accentColor : '#94a3b8';
+    switch (deck) {
+      case 'touchpad':
+        return (
+          <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <Rect x="4" y="3" width="16" height="18" rx="4" stroke={iconColor} strokeWidth="2" />
+            <Path d="M4 14h16M12 14v7" stroke={iconColor} strokeWidth="1.8" />
+          </Svg>
+        );
+      case 'keyboard':
+        return (
+          <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <Rect x="2" y="5" width="20" height="14" rx="3" stroke={iconColor} strokeWidth="2" />
+            <Path d="M6 9h1M10 9h1M14 9h1M18 9h1M6 13h1M10 13h4M17 13h1" stroke={iconColor} strokeWidth="2" strokeLinecap="round" />
+          </Svg>
+        );
+      case 'gamepad':
+        return (
+          <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <Rect x="2" y="6" width="20" height="12" rx="6" stroke={iconColor} strokeWidth="2" />
+            <Path d="M6 12h4M8 10v4M15 11h.01M17 13h.01" stroke={iconColor} strokeWidth="2" strokeLinecap="round" />
+          </Svg>
+        );
+      case 'media':
+        return (
+          <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <Path d="M11 5L6 9H2v6h4l5 4V5zM17 9a5 5 0 0 1 0 6M20 7a9 9 0 0 1 0 10" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        );
+      case 'presentation':
+        return (
+          <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <Rect x="3" y="3" width="18" height="12" rx="2" stroke={iconColor} strokeWidth="2" />
+            <Path d="M8 21l4-6 4 6M12 15v6" stroke={iconColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        );
+      case 'shortcuts':
+        return (
+          <Svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <Rect x="3" y="3" width="7" height="7" rx="1.5" stroke={iconColor} strokeWidth="2" />
+            <Rect x="14" y="3" width="7" height="7" rx="1.5" stroke={iconColor} strokeWidth="2" />
+            <Rect x="3" y="14" width="7" height="7" rx="1.5" stroke={iconColor} strokeWidth="2" />
+            <Rect x="14" y="14" width="7" height="7" rx="1.5" stroke={iconColor} strokeWidth="2" />
+          </Svg>
+        );
+    }
+  };
+
   // 3. Main Application Hub & Decks
   return (
     <SafeAreaView style={[styles.container, isFullscreen && styles.containerFullscreen]}>
@@ -145,7 +195,9 @@ export default function App() {
                     }}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.hubReturnIcon}>❮</Text>
+                    <Svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <Path d="M19 12H5M12 19l-7-7 7-7" />
+                    </Svg>
                     <Text style={styles.hubReturnText}>Hub</Text>
                   </TouchableOpacity>
 
@@ -168,14 +220,7 @@ export default function App() {
                           }}
                           activeOpacity={0.8}
                         >
-                          <Text
-                            style={[
-                              styles.deckPillText,
-                              isActive && [styles.deckPillTextActive, { color: currentAccent.primary }],
-                            ]}
-                          >
-                            {dt.label}
-                          </Text>
+                          {renderDeckIcon(dt.id, isActive, currentAccent.primary)}
                         </TouchableOpacity>
                       );
                     })}
@@ -201,14 +246,12 @@ export default function App() {
                   <TrackpadScreen
                     isFullscreen={isFullscreen}
                     onToggleFullscreen={toggleFullscreen}
-                    onBack={() => setCurrentDeck(null)}
                   />
                 )}
                 {currentDeck === 'keyboard' && (
                   <KeyboardScreen
                     isFullscreen={isFullscreen}
                     onToggleFullscreen={toggleFullscreen}
-                    onBack={() => setCurrentDeck(null)}
                   />
                 )}
                 {currentDeck === 'gamepad' && (
@@ -227,13 +270,11 @@ export default function App() {
                   <PresentationScreen
                     isFullscreen={isFullscreen}
                     onToggleFullscreen={toggleFullscreen}
-                    onBack={() => setCurrentDeck(null)}
                     accentColor={currentAccent.primary}
                   />
                 )}
                 {currentDeck === 'shortcuts' && (
                   <ShortcutsScreen
-                    onBack={() => setCurrentDeck(null)}
                     accentColor={currentAccent.primary}
                   />
                 )}
@@ -336,18 +377,13 @@ const styles = StyleSheet.create({
   hubReturnBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderWidth: 1,
     borderColor: CyberTokens.borderSubtle,
-    gap: 3,
-  },
-  hubReturnIcon: {
-    color: '#cbd5e1',
-    fontSize: 11,
-    fontWeight: '800',
+    gap: 4,
   },
   hubReturnText: {
     color: '#cbd5e1',
@@ -362,24 +398,16 @@ const styles = StyleSheet.create({
   },
   deckPill: {
     flex: 1,
-    paddingVertical: 5,
-    paddingHorizontal: 2,
-    borderRadius: 7,
+    height: 34,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
   },
   deckPillActive: {
     borderWidth: 1,
-  },
-  deckPillText: {
-    color: CyberTokens.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  deckPillTextActive: {
-    fontWeight: '800',
   },
   deckBody: {
     flex: 1,
