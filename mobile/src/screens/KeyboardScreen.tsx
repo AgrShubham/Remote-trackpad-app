@@ -11,6 +11,7 @@ import {
 import Svg, { Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
+import { settingsService } from '../services/SettingsService';
 import { useTheme } from '../theme/ThemeContext';
 import { Keycap } from '../components/Keycap';
 
@@ -35,9 +36,16 @@ export const KeyboardScreen: React.FC<KeyboardScreenProps> = ({
   const [isQuickTextOpen, setIsQuickTextOpen] = useState(false);
 
   // Trackpad States
-  const [speed, setSpeed] = useState<number>(1.4);
+  const [speed, setSpeed] = useState<number>(settingsService.getSettings().pointerSpeed);
   const [leftActive, setLeftActive] = useState<boolean>(false);
   const [rightActive, setRightActive] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    const unsub = settingsService.subscribe((next) => {
+      setSpeed(next.pointerSpeed);
+    });
+    return unsub;
+  }, []);
 
   // Precision Trackpad Gesture Engine
   const lastTouchTime = useRef<number>(0);

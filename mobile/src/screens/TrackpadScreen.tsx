@@ -14,6 +14,7 @@ import Svg, { Path, Rect, Circle, Defs, Pattern } from 'react-native-svg';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
 import { audioService } from '../services/AudioService';
+import { settingsService, AppSettings } from '../services/SettingsService';
 import { useTheme } from '../theme/ThemeContext';
 
 interface TrackpadScreenProps {
@@ -28,7 +29,19 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
   onBack,
 }) => {
   const { isDark, tokens } = useTheme();
-  const [speed, setSpeed] = useState<number>(1.4);
+  const [appSettings, setAppSettings] = useState<AppSettings>(settingsService.getSettings());
+  const appSettingsRef = useRef<AppSettings>(appSettings);
+  appSettingsRef.current = appSettings;
+
+  const [speed, setSpeed] = useState<number>(appSettings.pointerSpeed);
+
+  React.useEffect(() => {
+    const unsub = settingsService.subscribe((next) => {
+      setAppSettings(next);
+      setSpeed(next.pointerSpeed);
+    });
+    return unsub;
+  }, []);
   const [isDragLocked, setIsDragLocked] = useState<boolean>(false);
   const [leftClickActive, setLeftClickActive] = useState<boolean>(false);
   const [rightClickActive, setRightClickActive] = useState<boolean>(false);
@@ -211,7 +224,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           const timeSinceLastTap = now - lastTapTime.current;
           const distFromLastTap = Math.hypot(x - lastTapX.current, y - lastTapY.current);
 
-          if (timeSinceLastTap < 350 && distFromLastTap < 45) {
+          if (appSettingsRef.current.tapAndDrag && timeSinceLastTap < 350 && distFromLastTap < 45) {
             isDraggingRef.current = true;
             setIsDragLocked(true);
             socketService.mouseDown('left');
@@ -288,7 +301,8 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
           const rawDx = avgX - lastTouchX.current;
           const rawDy = avgY - lastTouchY.current;
 
-          const scrollFactor = 0.85 * speedRef.current;
+          const scrollDir = appSettingsRef.current.naturalScrolling ? 1 : -1;
+          const scrollFactor = 0.85 * appSettingsRef.current.scrollSpeed * scrollDir;
           const scrollDx = rawDx * scrollFactor;
           const scrollDy = rawDy * scrollFactor;
 
@@ -329,7 +343,7 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         const isTap = duration < 280 && totalTravel < 14;
 
         if (isTap) {
-          if (highestTouch === 1) {
+          if (highestTouch === 1 && appSettingsRef.current.tapToClick) {
             // Single-finger tap -> Left Click
             socketService.click('left');
             hapticsService.clickLeft();
@@ -360,20 +374,23 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
 
   // Seamless Integrated Click Handlers
   const handleLeftPressIn = () => {
+    const btn = appSettingsRef.current.swapMouseButtons ? 'right' : 'left';
     setLeftClickActive(true);
-    socketService.mouseDown('left');
+    socketService.mouseDown(btn);
     hapticsService.clickLeft();
     audioService.playHapticClick();
   };
 
   const handleLeftPressOut = () => {
+    const btn = appSettingsRef.current.swapMouseButtons ? 'right' : 'left';
     setLeftClickActive(false);
-    socketService.mouseUp('left');
+    socketService.mouseUp(btn);
   };
 
   const handleRightPress = () => {
+    const btn = appSettingsRef.current.swapMouseButtons ? 'left' : 'right';
     setRightClickActive(true);
-    socketService.click('right');
+    socketService.click(btn);
     hapticsService.clickRight();
     audioService.playHapticClick();
     setTimeout(() => setRightClickActive(false), 120);
@@ -520,18 +537,19 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
         </View>
 
         {/* Seamless Laptop-Style Bottom Click Zones with Center Scroll Strip */}
-        <View
-          style={[
-            styles.seamlessClickBar,
-            {
-              borderTopColor: tokens.borderSubtle,
-              backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.015)'
-                : 'rgba(0, 0, 0, 0.02)',
-            },
-            isFullscreen && styles.seamlessClickBarFullscreen,
-          ]}
-        >
+        {appSettings.showMouseButtons && (
+          <View
+            style={[
+              styles.seamlessClickBar,
+              {
+                borderTopColor: tokens.borderSubtle,
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.015)'
+                  : 'rgba(0, 0, 0, 0.02)',
+              },
+              isFullscreen && styles.seamlessClickBarFullscreen,
+            ]}
+          >
           {/* Left Click Zone */}
           <TouchableOpacity
             style={[styles.seamlessClickZone, leftClickActive && styles.seamlessClickActive]}
@@ -603,7 +621,8 @@ export const TrackpadScreen: React.FC<TrackpadScreenProps> = ({
               Right Click
             </Text>
           </TouchableOpacity>
-        </View>
+          </View>
+        )}
       </View>
 
       {/* Docked Direct Text Input Bar */}

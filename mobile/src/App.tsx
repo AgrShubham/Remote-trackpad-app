@@ -18,7 +18,7 @@ import { hapticsService } from './services/HapticsService';
 import { settingsService, ACCENT_PALETTES, AppSettings } from './services/SettingsService';
 import { authService, UserProfile } from './services/AuthService';
 import { ConnectionModal } from './components/ConnectionModal';
-import { SettingsModal } from './components/SettingsModal';
+import { SettingsScreen } from './screens/SettingsScreen';
 import { SplashScreen } from './screens/SplashScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -51,9 +51,19 @@ function AppContent() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [latency, setLatency] = useState(0);
   const [modalVisible, setModalVisible] = useState(false);
-  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [settingsSubViewActive, setSettingsSubViewActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
+  const [launchApplied, setLaunchApplied] = useState(false);
+
+  useEffect(() => {
+    if (!showSplash && !launchApplied && settings.hasCompletedOnboarding) {
+      setLaunchApplied(true);
+      if (settings.launchDeck && settings.launchDeck !== 'hub') {
+        setCurrentDeck(settings.launchDeck);
+      }
+    }
+  }, [showSplash, launchApplied, settings.hasCompletedOnboarding, settings.launchDeck]);
 
   const toggleFullscreen = () => {
     setIsFullscreen((prev) => !prev);
@@ -109,12 +119,9 @@ function AppContent() {
 
   // Handle bottom dock tab selection
   const handleSelectBottomTab = (tab: BottomNavTab) => {
-    if (tab === 'settings') {
-      setSettingsModalVisible(true);
-    } else {
-      setBottomTab(tab);
-      setCurrentDeck(null);
-    }
+    setBottomTab(tab);
+    setCurrentDeck(null);
+    setSettingsSubViewActive(false);
   };
 
   const deckTabs: { id: ControlDeckType; label: string }[] = [
@@ -332,18 +339,25 @@ function AppContent() {
               </View>
             </View>
           )
-        ) : (
+        ) : bottomTab === 'screen' ? (
           /* Show on PC View */
           <ShowOnPcScreen
             serverIp={socketService.getHostIp()}
             serverName={socketService.getServerName()}
             accentColor={currentAccent.primary}
           />
+        ) : (
+          /* Full-Screen Settings Tab */
+          <SettingsScreen
+            onOpenLogin={() => setShowLoginModal(true)}
+            onOpenServerSwitcher={() => setSwitcherDrawerVisible(true)}
+            onSubViewChange={setSettingsSubViewActive}
+          />
         )}
       </View>
 
-      {/* Floating Bottom Navigation Dock (Visible on Home and Show on PC) */}
-      {!isFullscreen && currentDeck === null && (
+      {/* Floating Bottom Navigation Dock (Visible on Home, Show on PC, and Main Settings) */}
+      {!isFullscreen && currentDeck === null && !(bottomTab === 'settings' && settingsSubViewActive) && (
         <BottomDock
           activeTab={bottomTab}
           onSelectTab={handleSelectBottomTab}
@@ -372,13 +386,6 @@ function AppContent() {
       <ConnectionModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
-      />
-
-      {/* Settings & Preferences Modal */}
-      <SettingsModal
-        visible={settingsModalVisible}
-        onClose={() => setSettingsModalVisible(false)}
-        onOpenLogin={() => setShowLoginModal(true)}
       />
 
       {/* In-App Login Modal (Invoked from Settings if guest user wants to sign in) */}

@@ -4,6 +4,7 @@ import KeepAwake from 'react-native-keep-awake';
 export type HapticIntensity = 'subtle' | 'medium' | 'strong';
 export type AccentTheme = 'teal' | 'blue' | 'emerald' | 'purple' | 'amber' | 'crimson';
 export type ThemeMode = 'dark' | 'light' | 'system';
+export type LaunchDeckOption = 'hub' | 'touchpad' | 'keyboard' | 'gamepad';
 
 export interface AppSettings {
   themeMode: ThemeMode;
@@ -14,6 +15,17 @@ export interface AppSettings {
   accentTheme: AccentTheme;
   preferUdp: boolean;
   autoReconnect: boolean;
+  // Touchpad & Mouse
+  pointerSpeed: number;
+  scrollSpeed: number;
+  naturalScrolling: boolean;
+  tapToClick: boolean;
+  tapAndDrag: boolean;
+  showMouseButtons: boolean;
+  swapMouseButtons: boolean;
+  // Launch & Presentation
+  launchDeck: LaunchDeckOption;
+  presentationTimerHaptics: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = '@remote_mouse_settings_v1';
@@ -27,6 +39,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accentTheme: 'teal',
   preferUdp: true,
   autoReconnect: true,
+  pointerSpeed: 1.4,
+  scrollSpeed: 1.0,
+  naturalScrolling: true,
+  tapToClick: true,
+  tapAndDrag: true,
+  showMouseButtons: true,
+  swapMouseButtons: false,
+  launchDeck: 'hub',
+  presentationTimerHaptics: true,
 };
 
 export const ACCENT_PALETTES: Record<

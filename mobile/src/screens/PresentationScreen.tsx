@@ -11,6 +11,7 @@ import { CyberTokens } from '../theme/cyberTokens';
 import { useTheme } from '../theme/ThemeContext';
 import { socketService } from '../services/SocketService';
 import { hapticsService } from '../services/HapticsService';
+import { settingsService } from '../services/SettingsService';
 
 interface PresentationScreenProps {
   isFullscreen?: boolean;
@@ -46,23 +47,29 @@ export const PresentationScreen: React.FC<PresentationScreenProps> = ({
           if (prev <= 1) {
             clearInterval(timerIntervalRef.current);
             setIsTimerRunning(false);
-            hapticsService.warning();
+            if (settingsService.getSettings().presentationTimerHaptics) {
+              hapticsService.warning();
+            }
             return 0;
           }
 
           // 5-minute remaining haptic alert
           if (prev === 300 && !alerted5Min.current) {
             alerted5Min.current = true;
-            hapticsService.medium();
-            setTimeout(() => hapticsService.medium(), 250);
+            if (settingsService.getSettings().presentationTimerHaptics) {
+              hapticsService.medium();
+              setTimeout(() => hapticsService.medium(), 250);
+            }
           }
 
           // 1-minute remaining haptic alert
-          if (prev === 600 && !alerted1Min.current) {
+          if (prev === 60 && !alerted1Min.current) {
             alerted1Min.current = true;
-            hapticsService.medium();
-            setTimeout(() => hapticsService.medium(), 200);
-            setTimeout(() => hapticsService.medium(), 400);
+            if (settingsService.getSettings().presentationTimerHaptics) {
+              hapticsService.medium();
+              setTimeout(() => hapticsService.medium(), 200);
+              setTimeout(() => hapticsService.medium(), 400);
+            }
           }
 
           return prev - 1;
