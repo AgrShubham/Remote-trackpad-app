@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
 import Svg, { Path, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { authService, UserProfile } from '../services/AuthService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
+import { DarkTokens } from '../theme/cyberTokens';
 
 interface LoginScreenProps {
   onSuccess: (user: UserProfile) => void;
@@ -18,6 +20,8 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccess, onSkip }) => {
+  const { isDark, tokens } = useTheme();
+  const styles = useMemo(() => createStyles(tokens, isDark), [tokens, isDark]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,16 +49,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccess, onSkip }) =
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b0c10" />
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={tokens.bgObsidian}
+      />
 
       {/* Background Ambient Glow */}
       <View style={styles.ambientGlow}>
         <Svg width="360" height="360" viewBox="0 0 200 200">
           <Defs>
             <RadialGradient id="loginGlow" cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor="#3b82f6" stopOpacity="0.18" />
+              <Stop offset="0%" stopColor="#3b82f6" stopOpacity={isDark ? '0.18' : '0.12'} />
               <Stop offset="70%" stopColor="#1e3a8a" stopOpacity="0.04" />
-              <Stop offset="100%" stopColor="#0b0c10" stopOpacity="0" />
+              <Stop offset="100%" stopColor={tokens.bgObsidian} stopOpacity="0" />
             </RadialGradient>
           </Defs>
           <Circle cx="100" cy="100" r="100" fill="url(#loginGlow)" />
@@ -194,10 +201,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onSuccess, onSkip }) =
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: typeof DarkTokens, isDark: boolean) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0c10',
+    backgroundColor: tokens.bgObsidian,
   },
   ambientGlow: {
     position: 'absolute',
@@ -218,39 +226,39 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: '#151722',
+    backgroundColor: tokens.cardBase,
     borderWidth: 1.5,
-    borderColor: 'rgba(59, 130, 246, 0.4)',
+    borderColor: isDark ? 'rgba(59, 130, 246, 0.4)' : 'rgba(37, 99, 235, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
     shadowColor: '#3b82f6',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: isDark ? 0.4 : 0.15,
     shadowRadius: 14,
     elevation: 8,
   },
   title: {
     fontSize: 23,
     fontWeight: '800',
-    color: '#ffffff',
+    color: tokens.textWhite,
     letterSpacing: 0.4,
     marginBottom: 10,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: tokens.textSecondary,
     textAlign: 'center',
     lineHeight: 19,
     paddingHorizontal: 10,
   },
   featuresCard: {
     width: '100%',
-    backgroundColor: '#141620',
+    backgroundColor: tokens.cardBase,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: tokens.borderSubtle,
     padding: 16,
     marginBottom: 26,
     gap: 14,
@@ -269,12 +277,12 @@ const styles = StyleSheet.create({
   featureTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: tokens.textWhite,
     marginBottom: 2,
   },
   featureDesc: {
     fontSize: 12,
-    color: '#8b8d9c',
+    color: tokens.textSecondary,
     lineHeight: 16,
   },
   errorBox: {
@@ -287,7 +295,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   errorText: {
-    color: '#fca5a5',
+    color: '#ef4444',
     fontSize: 12,
     textAlign: 'center',
   },
@@ -300,12 +308,14 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 12,
     backgroundColor: '#ffffff',
+    borderWidth: isDark ? 0 : 1,
+    borderColor: tokens.borderLight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: isDark ? 0.25 : 0.08,
     shadowRadius: 6,
     elevation: 4,
   },
@@ -327,13 +337,13 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: tokens.borderSubtle,
   },
   dividerText: {
     marginHorizontal: 12,
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748b',
+    color: tokens.textMuted,
     letterSpacing: 1,
   },
   skipBtn: {
@@ -341,31 +351,31 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderColor: tokens.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   skipBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#93c5fd',
+    color: tokens.blue,
     letterSpacing: 0.3,
     marginBottom: 3,
   },
   skipBtnSubtext: {
     fontSize: 11,
-    color: '#64748b',
+    color: tokens.textMuted,
     textAlign: 'center',
   },
   footerNote: {
     fontSize: 11,
-    color: '#475569',
+    color: tokens.textMuted,
     textAlign: 'center',
     marginTop: 24,
     lineHeight: 16,
     paddingHorizontal: 20,
   },
-});
+  });
 

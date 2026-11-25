@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -15,6 +15,8 @@ import { socketService, ConnectionStatus } from '../services/SocketService';
 import { discoveryService, DiscoveredHost } from '../services/DiscoveryService';
 import { autoConnectService } from '../services/AutoConnectService';
 import { hapticsService } from '../services/HapticsService';
+import { useTheme } from '../theme/ThemeContext';
+import { DarkTokens } from '../theme/cyberTokens';
 
 interface ConnectionGateModalProps {
   visible: boolean;
@@ -27,6 +29,8 @@ export const ConnectionGateModal: React.FC<ConnectionGateModalProps> = ({
   onSkip,
   onConnected,
 }) => {
+  const { isDark, tokens } = useTheme();
+  const styles = useMemo(() => createStyles(tokens, isDark), [tokens, isDark]);
   const [hosts, setHosts] = useState<DiscoveredHost[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>(socketService.getStatus());
   const [connectingIp, setConnectingIp] = useState<string | null>(null);
@@ -200,10 +204,11 @@ export const ConnectionGateModal: React.FC<ConnectionGateModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: typeof DarkTokens, isDark: boolean) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(5, 6, 9, 0.92)',
+    backgroundColor: isDark ? 'rgba(5, 6, 9, 0.92)' : 'rgba(15, 23, 42, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -211,15 +216,15 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#12141c',
+    backgroundColor: tokens.bgSurface,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: 'rgba(59, 130, 246, 0.35)',
+    borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : 'rgba(37, 99, 235, 0.25)',
     padding: 22,
     alignItems: 'center',
-    shadowColor: '#3b82f6',
+    shadowColor: isDark ? '#3b82f6' : '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
+    shadowOpacity: isDark ? 0.3 : 0.15,
     shadowRadius: 20,
     elevation: 10,
   },
@@ -242,7 +247,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: '#181b26',
+    backgroundColor: isDark ? '#181b26' : tokens.cardElevated,
     borderWidth: 1.5,
     borderColor: '#3b82f6',
     alignItems: 'center',
@@ -251,14 +256,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#ffffff',
+    color: tokens.textWhite,
     letterSpacing: 0.3,
     marginBottom: 6,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: tokens.textSecondary,
     textAlign: 'center',
     lineHeight: 17,
     paddingHorizontal: 8,
@@ -266,10 +271,10 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     width: '100%',
-    backgroundColor: '#0c0d14',
+    backgroundColor: isDark ? '#0c0d14' : tokens.cardElevated,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: tokens.borderSubtle,
     padding: 14,
     marginBottom: 18,
   },
@@ -282,13 +287,13 @@ const styles = StyleSheet.create({
   listHeaderTitle: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#64748b',
+    color: tokens.textMuted,
     letterSpacing: 1.2,
   },
   listHeaderBadge: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#3b82f6',
+    color: tokens.blue,
   },
   emptyBox: {
     paddingVertical: 20,
@@ -298,12 +303,12 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#cbd5e1',
+    color: tokens.textWhite,
     marginBottom: 4,
   },
   emptySubtext: {
     fontSize: 11,
-    color: '#64748b',
+    color: tokens.textMuted,
     textAlign: 'center',
     paddingHorizontal: 12,
     lineHeight: 15,
@@ -312,11 +317,11 @@ const styles = StyleSheet.create({
     maxHeight: 220,
   },
   hostCard: {
-    backgroundColor: '#171a24',
+    backgroundColor: isDark ? '#171a24' : tokens.bgSurface,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: tokens.borderSubtle,
     marginBottom: 10,
   },
   hostTopRow: {
@@ -334,12 +339,12 @@ const styles = StyleSheet.create({
   hostName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#ffffff',
+    color: tokens.textWhite,
     letterSpacing: 0.2,
   },
   hostIp: {
     fontSize: 11,
-    color: '#8b8d9c',
+    color: tokens.textSecondary,
     marginTop: 2,
   },
   connectBtnBottom: {
@@ -374,22 +379,22 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: tokens.borderLight,
     alignItems: 'center',
   },
   skipButtonText: {
-    color: '#93c5fd',
+    color: tokens.blue,
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.3,
     marginBottom: 2,
   },
   skipButtonSubtext: {
-    color: '#64748b',
+    color: tokens.textMuted,
     fontSize: 10,
     textAlign: 'center',
   },
-});
+  });
 

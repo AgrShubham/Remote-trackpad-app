@@ -20,6 +20,7 @@ import { authService, UserProfile } from './services/AuthService';
 import { ConnectionModal } from './components/ConnectionModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SplashScreen } from './screens/SplashScreen';
+import { OnboardingScreen } from './screens/OnboardingScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { ConnectionGateModal } from './components/ConnectionGateModal';
 import { ServerSwitcherBar } from './components/ServerSwitcherBar';
@@ -85,6 +86,15 @@ function AppContent() {
   // 1. Splash Screen Phase
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  // 1.5 First-Launch Onboarding Feature Overview Phase
+  if (!settings.hasCompletedOnboarding) {
+    return (
+      <OnboardingScreen
+        onComplete={() => settingsService.updateSetting('hasCompletedOnboarding', true)}
+      />
+    );
   }
 
   // 2. Authentication Screen Phase (First time launch if not logged in and not skipped)

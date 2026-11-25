@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -20,6 +20,8 @@ import { hapticsService } from '../services/HapticsService';
 import { socketService } from '../services/SocketService';
 import { authService, UserProfile } from '../services/AuthService';
 import { userStorageService } from '../services/UserStorageService';
+import { useTheme } from '../theme/ThemeContext';
+import { DarkTokens } from '../theme/cyberTokens';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -32,6 +34,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onOpenLogin,
 }) => {
+  const { isDark, tokens } = useTheme();
+  const styles = useMemo(() => createStyles(tokens, isDark), [tokens, isDark]);
   const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
   const [resetConfirm, setResetConfirm] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(authService.getCurrentUser());
@@ -495,6 +499,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </View>
 
                 <TouchableOpacity
+                  style={styles.resetBtn}
+                  onPress={() => {
+                    hapticsService.light();
+                    onClose();
+                    settingsService.updateSetting('hasCompletedOnboarding', false);
+                  }}
+                  focusable={false}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.resetBtnText}>✨ Replay App Feature Tour</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={[
                     styles.resetBtn,
                     resetConfirm && styles.resetBtnConfirm,
@@ -516,10 +533,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: typeof DarkTokens, isDark: boolean) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(3, 5, 10, 0.84)',
+    backgroundColor: isDark ? 'rgba(3, 5, 10, 0.84)' : 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
@@ -527,14 +545,14 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     maxHeight: '90%',
-    backgroundColor: '#11131d',
+    backgroundColor: tokens.bgSurface,
     borderRadius: 22,
     borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: tokens.borderLight,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.9,
+    shadowOpacity: isDark ? 0.9 : 0.2,
     shadowRadius: 30,
     elevation: 16,
   },
@@ -546,7 +564,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: tokens.borderSubtle,
   },
   headerTitleCol: {
     flex: 1,
@@ -562,13 +580,13 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   modalTitle: {
-    color: '#ffffff',
+    color: tokens.textWhite,
     fontSize: 16.5,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
   modalSubtitle: {
-    color: '#94a3b8',
+    color: tokens.textSecondary,
     fontSize: 11.5,
     marginTop: 2,
     marginLeft: 16,
@@ -577,15 +595,15 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: tokens.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
   },
   closeBtnText: {
-    color: '#cbd5e1',
+    color: tokens.textSecondary,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -596,7 +614,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    color: '#94a3b8',
+    color: tokens.textMuted,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
@@ -604,11 +622,11 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   card: {
-    backgroundColor: '#161925',
+    backgroundColor: isDark ? '#161925' : tokens.cardElevated,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: tokens.borderSubtle,
   },
   settingRow: {
     flexDirection: 'row',
@@ -617,7 +635,7 @@ const styles = StyleSheet.create({
   },
   settingRowBorderTop: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: tokens.borderSubtle,
     paddingTop: 12,
     marginTop: 12,
   },
@@ -626,12 +644,12 @@ const styles = StyleSheet.create({
     paddingRight: 14,
   },
   settingLabel: {
-    color: '#f8fafc',
+    color: tokens.textWhite,
     fontSize: 13.5,
     fontWeight: '700',
   },
   settingDesc: {
-    color: '#8b8d9c',
+    color: tokens.textSecondary,
     fontSize: 11.5,
     lineHeight: 16,
     marginTop: 2,
@@ -645,8 +663,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   togglePillOff: {
-    backgroundColor: '#202230',
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: isDark ? '#202230' : '#cbd5e1',
+    borderColor: tokens.borderLight,
   },
   toggleKnob: {
     width: 20,
@@ -661,22 +679,22 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: tokens.borderSubtle,
   },
   subOptionLabel: {
-    color: '#cbd5e1',
+    color: tokens.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     marginBottom: 8,
   },
   segmentedRow: {
     flexDirection: 'row',
-    backgroundColor: '#0f111a',
+    backgroundColor: isDark ? '#0f111a' : tokens.bgSurface,
     borderRadius: 10,
     padding: 3,
     gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: tokens.borderSubtle,
   },
   segmentBtn: {
     flex: 1,
@@ -688,7 +706,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   segmentBtnText: {
-    color: '#8b8d9c',
+    color: tokens.textSecondary,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -704,9 +722,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderRadius: 10,
-    backgroundColor: '#0f111a',
+    backgroundColor: isDark ? '#0f111a' : tokens.bgSurface,
     borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: tokens.borderSubtle,
   },
   colorOrb: {
     width: 24,
@@ -727,7 +745,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   paletteName: {
-    color: '#94a3b8',
+    color: tokens.textSecondary,
     fontSize: 11,
     textAlign: 'center',
   },
@@ -736,14 +754,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+    borderBottomColor: tokens.borderSubtle,
   },
   infoKey: {
-    color: '#8b8d9c',
+    color: tokens.textSecondary,
     fontSize: 12,
   },
   infoVal: {
-    color: '#cbd5e1',
+    color: tokens.textWhite,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -751,9 +769,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 9,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: tokens.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -762,12 +780,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239, 68, 68, 0.45)',
   },
   resetBtnText: {
-    color: '#94a3b8',
+    color: tokens.textSecondary,
     fontSize: 11.5,
     fontWeight: '600',
   },
   resetBtnTextConfirm: {
-    color: '#f87171',
+    color: '#ef4444',
     fontWeight: '700',
   },
   // Account & Cloud Backup Styles
@@ -798,12 +816,12 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#ffffff',
+    color: tokens.textWhite,
     marginBottom: 2,
   },
   profileEmail: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: tokens.textSecondary,
     marginBottom: 3,
   },
   syncStatusRow: {
@@ -812,21 +830,21 @@ const styles = StyleSheet.create({
   },
   syncStatusText: {
     fontSize: 10,
-    color: '#4ade80',
+    color: tokens.statusConnected,
     fontWeight: '600',
   },
   accountActionsRow: {
     flexDirection: 'row',
     gap: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    borderTopColor: tokens.borderSubtle,
     paddingTop: 10,
   },
   accountBtn: {
     flex: 1,
     paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.04)',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -846,7 +864,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoutBtnText: {
-    color: '#f87171',
+    color: '#ef4444',
     fontSize: 11.5,
     fontWeight: '700',
   },
@@ -868,12 +886,12 @@ const styles = StyleSheet.create({
   guestTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#ffffff',
+    color: tokens.textWhite,
     marginBottom: 2,
   },
   guestDesc: {
     fontSize: 11,
-    color: '#8b8d9c',
+    color: tokens.textSecondary,
     lineHeight: 15,
   },
   signInGoogleBtn: {
@@ -887,4 +905,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-});
+  });

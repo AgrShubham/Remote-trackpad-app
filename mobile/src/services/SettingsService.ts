@@ -7,6 +7,7 @@ export type ThemeMode = 'dark' | 'light' | 'system';
 
 export interface AppSettings {
   themeMode: ThemeMode;
+  hasCompletedOnboarding: boolean;
   keepAwake: boolean;
   hapticsEnabled: boolean;
   hapticsIntensity: HapticIntensity;
@@ -19,6 +20,7 @@ const SETTINGS_STORAGE_KEY = '@remote_mouse_settings_v1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   themeMode: 'dark',
+  hasCompletedOnboarding: false,
   keepAwake: true,
   hapticsEnabled: true,
   hapticsIntensity: 'medium',

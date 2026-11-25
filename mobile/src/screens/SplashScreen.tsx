@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   StatusBar,
 } from 'react-native';
 import Svg, { Circle, Path, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { useTheme } from '../theme/ThemeContext';
+import { DarkTokens } from '../theme/cyberTokens';
 
 const { width } = Dimensions.get('window');
 
@@ -17,6 +19,8 @@ interface SplashScreenProps {
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
+  const { isDark, tokens } = useTheme();
+  const styles = useMemo(() => createStyles(tokens, isDark), [tokens, isDark]);
   const pulseAnim = useRef(new Animated.Value(0.9)).current;
   const ringScale1 = useRef(new Animated.Value(0.8)).current;
   const ringOpacity1 = useRef(new Animated.Value(0.8)).current;
@@ -131,16 +135,19 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
   return (
     <Animated.View style={[styles.container, { opacity: containerFade }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#07080b" />
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={tokens.bgObsidian}
+      />
 
       {/* Background Radial Glow */}
       <View style={styles.glowBg}>
         <Svg width={width} height={width} viewBox="0 0 200 200">
           <Defs>
             <RadialGradient id="splashGlow" cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-              <Stop offset="60%" stopColor="#1e3a8a" stopOpacity="0.08" />
-              <Stop offset="100%" stopColor="#07080b" stopOpacity="0" />
+              <Stop offset="0%" stopColor="#3b82f6" stopOpacity={isDark ? '0.25' : '0.15'} />
+              <Stop offset="60%" stopColor="#1e3a8a" stopOpacity="0.06" />
+              <Stop offset="100%" stopColor={tokens.bgObsidian} stopOpacity="0" />
             </RadialGradient>
           </Defs>
           <Circle cx="100" cy="100" r="100" fill="url(#splashGlow)" />
@@ -232,10 +239,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (tokens: typeof DarkTokens, isDark: boolean) =>
+  StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#07080b',
+    backgroundColor: tokens.bgObsidian,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 99999,
@@ -268,14 +276,14 @@ const styles = StyleSheet.create({
     width: 86,
     height: 86,
     borderRadius: 43,
-    backgroundColor: '#12141c',
+    backgroundColor: tokens.cardBase,
     borderWidth: 1.5,
-    borderColor: 'rgba(59, 130, 246, 0.6)',
+    borderColor: isDark ? 'rgba(59, 130, 246, 0.6)' : 'rgba(37, 99, 235, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#3b82f6',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: isDark ? 0.8 : 0.25,
     shadowRadius: 24,
     elevation: 12,
   },
@@ -286,14 +294,14 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#ffffff',
+    color: tokens.textWhite,
     letterSpacing: 0.6,
     marginBottom: 6,
   },
   brandSubtitle: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#60a5fa',
+    color: tokens.blue,
     letterSpacing: 2.2,
   },
   loadingSection: {
@@ -303,7 +311,7 @@ const styles = StyleSheet.create({
   progressBarTrack: {
     width: '100%',
     height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
     borderRadius: 2,
     overflow: 'hidden',
     marginBottom: 10,
@@ -316,7 +324,7 @@ const styles = StyleSheet.create({
   statusCaption: {
     fontSize: 9,
     fontWeight: '600',
-    color: '#64748b',
+    color: tokens.textMuted,
     letterSpacing: 1.2,
   },
   footer: {
@@ -326,8 +334,8 @@ const styles = StyleSheet.create({
   footerVersion: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#334155',
+    color: tokens.textMuted,
     letterSpacing: 1.4,
   },
-});
+  });
 
