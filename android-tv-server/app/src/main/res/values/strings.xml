@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Remote Mouse TV Server</string>
+    <string name="accessibility_service_label">Remote Mouse TV Control</string>
+    <string name="accessibility_service_description">Allows your phone to move a virtual mouse cursor, click, scroll, type, and navigate on your Android TV.</string>
+</resources>
+

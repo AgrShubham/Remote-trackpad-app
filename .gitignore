@@ -16,6 +16,8 @@ dist/
 # Large mobile build outputs (published via GitHub Releases)
 *.apk
 *.aab
+.gradle/
+local.properties
 
 # OS
 .DS_Store

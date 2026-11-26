@@ -20,9 +20,15 @@ import threading
 import time
 import ctypes
 import webbrowser
-import winreg
 import json
 import urllib.request
+
+if sys.platform == "win32":
+    import winreg
+else:
+    winreg = None
+    import fcntl
+    import signal
 
 from PIL import Image, ImageDraw, ImageTk
 import pystray
@@ -55,6 +61,15 @@ def acquire_single_instance_mutex():
                 return False
         except Exception:
             pass
+    else:
+        try:
+            lock_path = "/tmp/remote_mouse_pro_server.lock"
+            mutex_handle = open(lock_path, "w")
+            fcntl.flock(mutex_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            mutex_handle.write(str(os.getpid()))
+            mutex_handle.flush()
+        except Exception:
+            return False
     return True
 
 # ----------------- Subprocess Worker Management ----------------- #
@@ -63,22 +78,32 @@ watchdog_active = True
 
 def kill_port_process(port=5000):
     """Find and kill any stale process holding the given TCP port."""
-    if sys.platform != "win32":
-        return
-    try:
-        res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
-        my_pid = os.getpid()
-        killed = []
-        for line in res.stdout.splitlines():
-            if f":{port}" in line and "LISTENING" in line:
-                parts = line.strip().split()
-                if len(parts) >= 5:
-                    pid = int(parts[-1])
-                    if pid != my_pid and pid > 0 and pid not in killed:
-                        subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
-                        killed.append(pid)
-    except Exception as e:
-        print("Error freeing port:", e)
+    my_pid = os.getpid()
+    if sys.platform == "win32":
+        try:
+            res = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+            killed = []
+            for line in res.stdout.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    if len(parts) >= 5:
+                        pid = int(parts[-1])
+                        if pid != my_pid and pid > 0 and pid not in killed:
+                            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+                            killed.append(pid)
+        except Exception as e:
+            print("Error freeing port:", e)
+    else:
+        try:
+            res = subprocess.run(["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True)
+            for pid_str in res.stdout.splitlines():
+                pid_str = pid_str.strip()
+                if pid_str.isdigit():
+                    pid = int(pid_str)
+                    if pid != my_pid and pid > 0:
+                        os.kill(pid, signal.SIGKILL)
+        except Exception as e:
+            print("Error freeing port on POSIX:", e)
 
 def start_worker_process():
     global worker_proc
@@ -173,33 +198,73 @@ def api_post(endpoint, payload=None):
     except Exception:
         return None
 
-# ----------------- Windows Startup Registry Helper ----------------- #
+# ----------------- Startup Helper (Windows Registry / macOS LaunchAgent) ----------------- #
 REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 REG_APP_NAME = "RemoteMouseProServer"
+MAC_PLIST_PATH = os.path.expanduser("~/Library/LaunchAgents/com.remotemousepro.server.plist")
 
 def is_auto_start_enabled():
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_READ) as key:
-            val, _ = winreg.QueryValueEx(key, REG_APP_NAME)
-            return bool(val)
-    except Exception:
-        return False
+    if sys.platform == "win32" and winreg:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_READ) as key:
+                val, _ = winreg.QueryValueEx(key, REG_APP_NAME)
+                return bool(val)
+        except Exception:
+            return False
+    elif sys.platform == "darwin":
+        return os.path.exists(MAC_PLIST_PATH)
+    return False
 
 def set_auto_start(enabled: bool):
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+    if sys.platform == "win32" and winreg:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+                if enabled:
+                    cmd = f'"{APP_EXE_PATH}"'
+                    winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, cmd)
+                else:
+                    try:
+                        winreg.DeleteValue(key, REG_APP_NAME)
+                    except FileNotFoundError:
+                        pass
+            return True
+        except Exception as e:
+            print("Failed to update auto start registry:", e)
+            return False
+    elif sys.platform == "darwin":
+        try:
             if enabled:
-                cmd = f'"{APP_EXE_PATH}"'
-                winreg.SetValueEx(key, REG_APP_NAME, 0, winreg.REG_SZ, cmd)
+                os.makedirs(os.path.dirname(MAC_PLIST_PATH), exist_ok=True)
+                prog_args = (
+                    f"<string>{APP_EXE_PATH}</string>"
+                    if getattr(sys, "frozen", False)
+                    else f"<string>{sys.executable}</string>\n        <string>{APP_EXE_PATH}</string>"
+                )
+                plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.remotemousepro.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        {prog_args}
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+"""
+                with open(MAC_PLIST_PATH, "w", encoding="utf-8") as f:
+                    f.write(plist_content)
             else:
-                try:
-                    winreg.DeleteValue(key, REG_APP_NAME)
-                except FileNotFoundError:
-                    pass
-        return True
-    except Exception as e:
-        print("Failed to update auto start registry:", e)
-        return False
+                if os.path.exists(MAC_PLIST_PATH):
+                    os.remove(MAC_PLIST_PATH)
+            return True
+        except Exception as e:
+            print("Failed to update macOS LaunchAgent:", e)
+            return False
+    return False
 
 # ----------------- Tray Icon Generator ----------------- #
 def create_tray_icon_image(paused=False):
@@ -799,7 +864,7 @@ def setup_system_tray(lan_ip, port=5000):
         pystray.MenuItem("Open Web Trackpad in Browser", on_tray_web),
         pystray.MenuItem("Pause / Resume Remote Inputs", on_tray_pause_toggle),
         pystray.MenuItem(
-            "Start on Windows Boot",
+            "Start on Login" if sys.platform == "darwin" else "Start on Windows Boot",
             on_tray_autostart_toggle,
             checked=lambda item: is_auto_start_enabled()
         ),
@@ -808,7 +873,11 @@ def setup_system_tray(lan_ip, port=5000):
     )
 
     tray_icon = pystray.Icon("RemoteMousePro", icon_image, "Remote Mouse & Gamepad Pro", menu)
-    tray_icon.run()
+    if sys.platform == "darwin":
+        # macOS AppKit requires UI/Tkinter on main thread; run pystray detached
+        tray_icon.run_detached()
+    else:
+        tray_icon.run()
 
 # ----------------- Main Launcher ----------------- #
 def main():
@@ -820,7 +889,7 @@ def main():
         root.withdraw()
         messagebox.showinfo(
             "Remote Mouse Server",
-            "Remote Mouse Server is already running in your Windows System Tray (near the taskbar clock)."
+            "Remote Mouse Server is already running in your System Tray / Menu Bar."
         )
         sys.exit(0)
 
@@ -835,11 +904,14 @@ def main():
 
     dashboard = ControlDashboard(lan_ip, port)
 
-    # 4. If run by user double-click, pop up the dashboard initially
-    threading.Thread(target=dashboard.show, daemon=True).start()
-
-    # 5. Run System Tray on main thread
-    setup_system_tray(lan_ip, port)
+    if sys.platform == "darwin":
+        # macOS: start detached menu bar tray, then run Tkinter on main thread
+        setup_system_tray(lan_ip, port)
+        dashboard.show()
+    else:
+        # Windows: pop up dashboard in thread and run tray loop on main thread
+        threading.Thread(target=dashboard.show, daemon=True).start()
+        setup_system_tray(lan_ip, port)
 
 if __name__ == "__main__":
     main()

@@ -54,14 +54,10 @@ KEY_MAP = {
     "left": Key.left,
     "right": Key.right,
     "delete": Key.delete,
-    "insert": Key.insert,
     "home": Key.home,
     "end": Key.end,
     "page_up": Key.page_up,
     "page_down": Key.page_down,
-    "print_screen": Key.print_screen,
-    "scroll_lock": Key.scroll_lock,
-    "pause": Key.pause,
 
     # Function keys F1 - F12
     "f1": Key.f1,
@@ -76,15 +72,24 @@ KEY_MAP = {
     "f10": Key.f10,
     "f11": Key.f11,
     "f12": Key.f12,
-
-    # Media keys (support can vary by OS)
-    "media_play_pause": Key.media_play_pause,
-    "media_next": Key.media_next,
-    "media_previous": Key.media_previous,
-    "media_volume_up": Key.media_volume_up,
-    "media_volume_down": Key.media_volume_down,
-    "media_volume_mute": Key.media_volume_mute,
 }
+
+# Safely register OS-optional keys (macOS lacks insert, print_screen, scroll_lock, pause)
+for _key_name in (
+    "insert",
+    "print_screen",
+    "scroll_lock",
+    "pause",
+    "media_play_pause",
+    "media_next",
+    "media_previous",
+    "media_volume_up",
+    "media_volume_down",
+    "media_volume_mute",
+):
+    _resolved = getattr(Key, _key_name, None)
+    if _resolved is not None:
+        KEY_MAP[_key_name] = _resolved
 
 
 # ----------------- Real-Time Server State & Telemetry ----------------- #
@@ -149,6 +154,8 @@ def api_status():
             "rate_per_sec": packet_stats["udp_rate"],
         },
         "logs": list(recent_logs),
+        "platform": os.sys.platform if hasattr(os, "sys") else __import__("sys").platform,
+        "macos_accessibility": check_macos_accessibility(),
     })
 
 @app.route("/api/pause", methods=["POST"])
@@ -225,6 +232,21 @@ if user32:
 
 
 _desktop_attached = threading.local()
+
+def check_macos_accessibility():
+    """Return True if not macOS, or if macOS Accessibility permission is granted."""
+    import sys
+    if sys.platform != "darwin":
+        return True
+    try:
+        app_services = ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+        )
+        app_services.AXIsProcessTrusted.restype = ctypes.c_bool
+        return bool(app_services.AXIsProcessTrusted())
+    except Exception:
+        return True
+
 
 def ensure_desktop():
     """
@@ -363,8 +385,17 @@ def native_mouse_scroll(dx, dy):
 
     try:
         # Fallback to pynput: mouse.scroll(dx, dy)
-        # Note: in pynput, positive dy scrolls down
-        mouse.scroll(int(dx), int(dy))
+        import sys
+        if sys.platform == "darwin":
+            # macOS pynput scroll expects small integer steps; scale smoothly
+            mac_y = int(round(scroll_accum_y / 25.0))
+            mac_x = int(round(scroll_accum_x / 25.0))
+            if mac_y != 0 or mac_x != 0:
+                mouse.scroll(mac_x, mac_y)
+                scroll_accum_y -= mac_y * 25.0
+                scroll_accum_x -= mac_x * 25.0
+        else:
+            mouse.scroll(int(dx), int(dy))
     except Exception as e:
         print("Fallback mouse.scroll error:", e, flush=True)
 
@@ -879,6 +910,16 @@ def print_startup_banner(lan_ip, port=5000, udp_port=5002):
 
 
 def start_server_worker(port=5000, udp_beacon_port=5001, udp_input_port=5002):
+    import sys
+    if sys.platform == "darwin" and not check_macos_accessibility():
+        print(
+            "  ! macOS Accessibility permission NOT granted.\n"
+            "    Go to: System Settings -> Privacy & Security -> Accessibility\n"
+            "    and enable this app / Terminal to control mouse & keyboard.",
+            flush=True,
+        )
+        log_event("WARN", "macOS Accessibility permission not granted")
+
     lan_ip = get_lan_ip()
     print_startup_banner(lan_ip, port=port, udp_port=udp_input_port)
 
