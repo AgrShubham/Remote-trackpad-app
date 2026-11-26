@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
@@ -19,12 +21,23 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.text.SimpleDateFormat
 import java.util.Collections
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TvRemoteService : Service() {
+
+    data class ClientSession(
+        val sid: String,
+        val ip: String,
+        val connectedAtMs: Long,
+        var packets: Long = 0L
+    )
 
     companion object {
         const val CHANNEL_ID = "remote_mouse_tv_channel"
@@ -37,6 +50,9 @@ class TvRemoteService : Service() {
             private set
 
         @Volatile
+        var inputsPaused = false
+
+        @Volatile
         var connectedClients = 0
             private set
 
@@ -44,7 +60,26 @@ class TvRemoteService : Service() {
         var udpPackets = 0L
             private set
 
+        @Volatile
+        var udpRatePerSec = 0L
+            private set
+
+        @Volatile
+        var serverStartedAtMs = 0L
+            private set
+
+        val clientSessions = ConcurrentHashMap<WebSocket, ClientSession>()
+        val recentLogs = CopyOnWriteArrayList<String>()
+
         var onStatusChanged: (() -> Unit)? = null
+
+        fun addLog(msg: String) {
+            val ts = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            recentLogs.add(0, "[$ts] $msg")
+            while (recentLogs.size > 12) {
+                recentLogs.removeAt(recentLogs.size - 1)
+            }
+        }
     }
 
     private val activeFlag = AtomicBoolean(false)
@@ -52,6 +87,10 @@ class TvRemoteService : Service() {
     private var udpInputSocket: DatagramSocket? = null
     private var beaconThread: Thread? = null
     private var udpThread: Thread? = null
+    private var heartbeatThread: Thread? = null
+
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -62,9 +101,13 @@ class TvRemoteService : Service() {
         startForeground(101, buildNotification())
         if (activeFlag.compareAndSet(false, true)) {
             isRunning = true
+            serverStartedAtMs = System.currentTimeMillis()
+            acquireLocks()
+            addLog("TV Server started on TCP $TCP_PORT / UDP $UDP_INPUT_PORT")
             startSocketIoServer()
             startUdpInputServer()
             startDiscoveryBeacon()
+            startHeartbeatLoop()
             onStatusChanged?.invoke()
         }
         return START_STICKY
@@ -74,21 +117,94 @@ class TvRemoteService : Service() {
         activeFlag.set(false)
         isRunning = false
         connectedClients = 0
+        clientSessions.clear()
+        releaseLocks()
         try { wsServer?.stop(500) } catch (_: Exception) {}
         try { udpInputSocket?.close() } catch (_: Exception) {}
         beaconThread?.interrupt()
         udpThread?.interrupt()
+        heartbeatThread?.interrupt()
+        addLog("TV Server stopped")
         onStatusChanged?.invoke()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @Suppress("DEPRECATION")
+    private fun acquireLocks() {
+        try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "RemoteMouseTV:WifiLock").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RemoteMouseTV:WakeLock").apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseLocks() {
+        try {
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+        } catch (_: Exception) {}
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
+    }
+
     private fun startSocketIoServer() {
-        val server = SocketIoWsServer(InetSocketAddress(TCP_PORT))
-        server.isReuseAddr = true
+        val server = SocketIoWsServer(InetSocketAddress(TCP_PORT)).apply {
+            isReuseAddr = true
+            connectionLostTimeout = 0 // Managed explicitly by Engine.IO v4 ping/pong
+        }
         server.start()
         wsServer = server
+    }
+
+    /**
+     * Engine.IO v4 requires the SERVER to initiate '2' (ping) every pingInterval.
+     * Without this, socket.io-client@4.8.1 disconnects after pingInterval + pingTimeout (~45s)!
+     */
+    private fun startHeartbeatLoop() {
+        heartbeatThread = Thread {
+            var lastUdpSnapshot = udpPackets
+            var tick = 0
+            while (activeFlag.get()) {
+                try {
+                    Thread.sleep(1000)
+                    tick++
+
+                    // Compute 1s UDP packet rate
+                    val currentUdp = udpPackets
+                    udpRatePerSec = (currentUdp - lastUdpSnapshot).coerceAtLeast(0L)
+                    lastUdpSnapshot = currentUdp
+
+                    // Send Engine.IO v4 server ping ('2') every 15 seconds
+                    if (tick % 15 == 0) {
+                        for (conn in clientSessions.keys) {
+                            if (conn.isOpen) {
+                                try {
+                                    conn.send("2")
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                } catch (_: InterruptedException) {
+                    break
+                } catch (_: Exception) {
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun startUdpInputServer() {
@@ -107,6 +223,7 @@ class TvRemoteService : Service() {
                     val parts = msg.split(" ")
                     if (parts.size >= 3) {
                         udpPackets++
+                        if (inputsPaused) continue
                         val dx = parts[1].toFloatOrNull() ?: 0f
                         val dy = parts[2].toFloatOrNull() ?: 0f
                         val svc = TvAccessibilityService.instance
@@ -141,7 +258,7 @@ class TvRemoteService : Service() {
                             put("all_ips", JSONArray(ips))
                             put("port", TCP_PORT)
                             put("udp_port", UDP_INPUT_PORT)
-                            put("version", "1.4.0")
+                            put("version", "1.5.0")
                         }.toString().toByteArray(Charsets.UTF_8)
 
                         try {
@@ -204,11 +321,12 @@ class TvRemoteService : Service() {
     }
 
     private inner class SocketIoWsServer(address: InetSocketAddress) : WebSocketServer(address) {
-        private val sids = ConcurrentHashMap<WebSocket, String>()
-
         override fun onOpen(conn: WebSocket, handshake: ClientHandshake?) {
             val sid = UUID.randomUUID().toString().replace("-", "").take(16)
-            sids[conn] = sid
+            val remoteIp = conn.remoteSocketAddress?.address?.hostAddress ?: "Unknown"
+            clientSessions[conn] = ClientSession(sid, remoteIp, System.currentTimeMillis())
+            connectedClients = clientSessions.size
+
             // Engine.IO v4 OPEN packet
             val openJson = JSONObject().apply {
                 put("sid", sid)
@@ -218,13 +336,16 @@ class TvRemoteService : Service() {
                 put("maxPayload", 1000000)
             }
             conn.send("0$openJson")
-            connectedClients = sids.size
+            addLog("Phone connected ($remoteIp)")
             onStatusChanged?.invoke()
         }
 
         override fun onClose(conn: WebSocket, code: Int, reason: String?, remote: Boolean) {
-            sids.remove(conn)
-            connectedClients = sids.size
+            val session = clientSessions.remove(conn)
+            connectedClients = clientSessions.size
+            if (session != null) {
+                addLog("Phone disconnected (${session.ip})")
+            }
             onStatusChanged?.invoke()
         }
 
@@ -233,11 +354,14 @@ class TvRemoteService : Service() {
                 conn.send("3")
                 return
             }
-            if (message == "3") return
+            if (message == "3") {
+                // Client pong response to server Engine.IO ping
+                return
+            }
 
             // Socket.IO CONNECT ('40' or '40{...}')
             if (message.startsWith("40")) {
-                val sid = sids[conn] ?: "tv"
+                val sid = clientSessions[conn]?.sid ?: "tv"
                 conn.send("40{\"sid\":\"$sid\"}")
                 return
             }
@@ -254,6 +378,7 @@ class TvRemoteService : Service() {
                     val arr = JSONArray(jsonStr)
                     val event = arr.optString(0)
                     val payload = arr.optJSONObject(1) ?: JSONObject()
+                    clientSessions[conn]?.let { it.packets++ }
                     handleSocketEvent(conn, event, payload, ackId)
                 } catch (_: Exception) {
                 }
@@ -269,13 +394,17 @@ class TvRemoteService : Service() {
             data: JSONObject,
             ackId: String
         ) {
+            if (event == "ping_check") {
+                if (ackId.isNotEmpty()) {
+                    conn.send("43$ackId[]")
+                }
+                return
+            }
+
+            if (inputsPaused) return
+
             val svc = TvAccessibilityService.instance
             when (event) {
-                "ping_check" -> {
-                    if (ackId.isNotEmpty()) {
-                        conn.send("43$ackId[]")
-                    }
-                }
                 "move" -> {
                     svc?.moveCursor(
                         data.optDouble("dx", 0.0).toFloat(),
@@ -338,4 +467,3 @@ class TvRemoteService : Service() {
             .build()
     }
 }
-
