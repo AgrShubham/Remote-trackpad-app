@@ -34,6 +34,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toggleServerBtn: Button
     private lateinit var accessBtn: Button
     private lateinit var appInfoBtn: Button
+    private lateinit var imeBtn: Button
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private var permissionDialog: AlertDialog? = null
@@ -257,9 +258,26 @@ class MainActivity : AppCompatActivity() {
             layoutParams = lp
         }
 
+        imeBtn = createTvButton("Enable TV Keyboard", "#2563EB") {
+            try {
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+        }.apply {
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = 16
+            }
+            layoutParams = lp
+        }
+
         btnRow.addView(toggleServerBtn)
         btnRow.addView(accessBtn)
         btnRow.addView(appInfoBtn)
+        btnRow.addView(imeBtn)
 
         card.addView(title)
         card.addView(subtitle)

@@ -1,12 +1,16 @@
-import { Vibration, Platform } from 'react-native';
+import ReactNativeHapticFeedback, { HapticFeedbackTypes } from 'react-native-haptic-feedback';
 import { settingsService, HapticIntensity } from './SettingsService';
+
+const HAPTIC_OPTIONS = {
+  enableVibrateFallback: true,
+  ignoreAndroidSystemSettings: true,
+};
 
 class HapticsService {
   private enabled: boolean = true;
   private intensity: HapticIntensity = 'medium';
 
   constructor() {
-    // Sync with settings service
     settingsService.subscribe((settings) => {
       this.enabled = settings.hapticsEnabled;
       this.intensity = settings.hapticsIntensity;
@@ -30,78 +34,127 @@ class HapticsService {
     this.intensity = intensity;
   }
 
-  private scaleDuration(ms: number): number {
-    switch (this.intensity) {
-      case 'subtle':
-        return Math.max(8, Math.round(ms * 0.65));
-      case 'strong':
-        return Math.min(100, Math.round(ms * 1.5));
-      case 'medium':
-      default:
-        return ms;
-    }
-  }
-
-  private trigger(pattern: number[]) {
+  private triggerNative(
+    subtleType: HapticFeedbackTypes,
+    mediumType: HapticFeedbackTypes,
+    strongType: HapticFeedbackTypes
+  ) {
     if (!this.enabled) return;
     try {
-      const scaled = pattern.map((val, idx) => (idx % 2 === 1 ? this.scaleDuration(val) : val));
-      if (Platform.OS === 'android') {
-        Vibration.vibrate(scaled);
-      } else {
-        Vibration.vibrate(scaled[1] || 30);
-      }
-    } catch (e) {
-      // Ignore vibration errors on unsupported devices
+      const chosen =
+        this.intensity === 'subtle'
+          ? subtleType
+          : this.intensity === 'strong'
+          ? strongType
+          : mediumType;
+      ReactNativeHapticFeedback.trigger(chosen, HAPTIC_OPTIONS);
+    } catch (_) {
+      // Ignore on unsupported devices
     }
   }
 
   public light() {
-    this.trigger([0, 18]);
+    this.triggerNative(
+      HapticFeedbackTypes.clockTick,
+      HapticFeedbackTypes.keyboardTap,
+      HapticFeedbackTypes.impactLight
+    );
   }
 
   public medium() {
-    this.trigger([0, 32]);
+    this.triggerNative(
+      HapticFeedbackTypes.impactLight,
+      HapticFeedbackTypes.impactMedium,
+      HapticFeedbackTypes.impactHeavy
+    );
   }
 
   public warning() {
-    this.trigger([0, 40, 50, 40]);
+    this.triggerNative(
+      HapticFeedbackTypes.notificationWarning,
+      HapticFeedbackTypes.notificationWarning,
+      HapticFeedbackTypes.notificationError
+    );
   }
 
   public clickLeft() {
-    this.trigger([0, 30]);
+    this.triggerNative(
+      HapticFeedbackTypes.clockTick,
+      HapticFeedbackTypes.impactLight,
+      HapticFeedbackTypes.impactMedium
+    );
   }
 
   public clickRight() {
-    this.trigger([0, 35, 40, 35]);
+    this.triggerNative(
+      HapticFeedbackTypes.impactLight,
+      HapticFeedbackTypes.impactMedium,
+      HapticFeedbackTypes.impactHeavy
+    );
   }
 
   public dragLock() {
-    this.trigger([0, 45]);
+    this.triggerNative(
+      HapticFeedbackTypes.impactMedium,
+      HapticFeedbackTypes.impactHeavy,
+      HapticFeedbackTypes.impactHeavy
+    );
   }
 
   public gamepadTrigger() {
-    this.trigger([0, 45, 30, 45]);
+    this.triggerNative(
+      HapticFeedbackTypes.impactMedium,
+      HapticFeedbackTypes.impactHeavy,
+      HapticFeedbackTypes.impactHeavy
+    );
   }
 
   public gamepadButton() {
-    this.trigger([0, 35]);
+    this.triggerNative(
+      HapticFeedbackTypes.keyboardTap,
+      HapticFeedbackTypes.impactLight,
+      HapticFeedbackTypes.impactMedium
+    );
   }
 
   public gamepadBumper() {
-    this.trigger([0, 38]);
+    this.triggerNative(
+      HapticFeedbackTypes.clockTick,
+      HapticFeedbackTypes.impactLight,
+      HapticFeedbackTypes.impactMedium
+    );
   }
 
   public dpad() {
-    this.trigger([0, 30]);
+    this.triggerNative(
+      HapticFeedbackTypes.clockTick,
+      HapticFeedbackTypes.keyboardTap,
+      HapticFeedbackTypes.impactLight
+    );
   }
 
   public sprint() {
-    this.trigger([0, 35, 25, 45]);
+    this.triggerNative(
+      HapticFeedbackTypes.impactMedium,
+      HapticFeedbackTypes.impactHeavy,
+      HapticFeedbackTypes.impactHeavy
+    );
   }
 
   public keyboard(isSpacebar: boolean = false) {
-    this.trigger([0, isSpacebar ? 36 : 28]);
+    if (isSpacebar) {
+      this.triggerNative(
+        HapticFeedbackTypes.keyboardTap,
+        HapticFeedbackTypes.impactLight,
+        HapticFeedbackTypes.impactMedium
+      );
+    } else {
+      this.triggerNative(
+        HapticFeedbackTypes.clockTick,
+        HapticFeedbackTypes.keyboardTap,
+        HapticFeedbackTypes.impactLight
+      );
+    }
   }
 }
 

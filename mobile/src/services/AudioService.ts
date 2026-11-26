@@ -2,12 +2,40 @@ import Sound from 'react-native-sound';
 
 Sound.setCategory('Ambient', true);
 
+class SoundVoicePool {
+  private voices: Sound[] = [];
+  private index: number = 0;
+
+  constructor(filename: string, poolSize: number = 3) {
+    for (let i = 0; i < poolSize; i++) {
+      const snd = new Sound(filename, Sound.MAIN_BUNDLE, (err) => {
+        if (err && i === 0) {
+          console.warn(`Failed to load ${filename} sound`, err);
+        }
+      });
+      this.voices.push(snd);
+    }
+  }
+
+  public playInstant() {
+    if (this.voices.length === 0) return;
+    const voice = this.voices[this.index];
+    this.index = (this.index + 1) % this.voices.length;
+    try {
+      voice.setCurrentTime(0);
+      voice.play();
+    } catch (_) {
+      // Ignore transient playback errors
+    }
+  }
+}
+
 class AudioService {
   private enabled: boolean = true;
-  private soundStandard: Sound | null = null;
-  private soundSpacebar: Sound | null = null;
-  private soundEnter: Sound | null = null;
-  private soundHaptic: Sound | null = null;
+  private poolStandard: SoundVoicePool | null = null;
+  private poolSpacebar: SoundVoicePool | null = null;
+  private poolEnter: SoundVoicePool | null = null;
+  private poolHaptic: SoundVoicePool | null = null;
 
   constructor() {
     this.initSounds();
@@ -15,21 +43,10 @@ class AudioService {
 
   private initSounds() {
     try {
-      this.soundStandard = new Sound('key_standard', Sound.MAIN_BUNDLE, (err) => {
-        if (err) console.warn('Failed to load key_standard sound', err);
-      });
-
-      this.soundSpacebar = new Sound('key_spacebar', Sound.MAIN_BUNDLE, (err) => {
-        if (err) console.warn('Failed to load key_spacebar sound', err);
-      });
-
-      this.soundEnter = new Sound('key_enter', Sound.MAIN_BUNDLE, (err) => {
-        if (err) console.warn('Failed to load key_enter sound', err);
-      });
-
-      this.soundHaptic = new Sound('click_haptic', Sound.MAIN_BUNDLE, (err) => {
-        if (err) console.warn('Failed to load click_haptic sound', err);
-      });
+      this.poolStandard = new SoundVoicePool('key_standard', 4);
+      this.poolSpacebar = new SoundVoicePool('key_spacebar', 2);
+      this.poolEnter = new SoundVoicePool('key_enter', 2);
+      this.poolHaptic = new SoundVoicePool('click_haptic', 3);
     } catch (e) {
       console.warn('AudioService init error:', e);
     }
@@ -51,23 +68,18 @@ class AudioService {
   public playKey(type: 'standard' | 'spacebar' | 'enter' = 'standard') {
     if (!this.enabled) return;
 
-    let snd: Sound | null = null;
-    if (type === 'spacebar') snd = this.soundSpacebar;
-    else if (type === 'enter') snd = this.soundEnter;
-    else snd = this.soundStandard;
-
-    if (snd) {
-      snd.stop(() => {
-        snd?.play();
-      });
+    if (type === 'spacebar') {
+      this.poolSpacebar?.playInstant();
+    } else if (type === 'enter') {
+      this.poolEnter?.playInstant();
+    } else {
+      this.poolStandard?.playInstant();
     }
   }
 
   public playHapticClick() {
-    if (!this.enabled || !this.soundHaptic) return;
-    this.soundHaptic.stop(() => {
-      this.soundHaptic?.play();
-    });
+    if (!this.enabled) return;
+    this.poolHaptic?.playInstant();
   }
 }
 

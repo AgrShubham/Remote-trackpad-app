@@ -170,10 +170,48 @@ class TvAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun findEditableNode(): AccessibilityNodeInfo? {
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                for (win in windows) {
+                    win.root?.let { candidates.add(it) }
+                }
+            }
+        } catch (_: Exception) {
+        }
+        rootInActiveWindow?.let { candidates.add(it) }
+
+        for (root in candidates) {
+            root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let {
+                if (it.isEditable || it.className?.toString()?.contains("EditText") == true) {
+                    return it
+                }
+            }
+        }
+        for (root in candidates) {
+            findEditableRecursive(root)?.let { return it }
+        }
+        return null
+    }
+
+    private fun findEditableRecursive(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        if (node.isEditable && (node.isFocused || node.isAccessibilityFocused)) {
+            return node
+        }
+        for (i in 0 until node.childCount) {
+            findEditableRecursive(node.getChild(i))?.let { return it }
+        }
+        return null
+    }
+
     fun injectText(text: String) {
+        if (TvKeyboardImeService.instance?.commitTextFromRemote(text) == true) {
+            return
+        }
         mainHandler.post {
-            val root = rootInActiveWindow ?: return@post
-            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return@post
+            val focused = findEditableNode() ?: return@post
             val existing = focused.text?.toString() ?: ""
             val args = Bundle().apply {
                 putCharSequence(
@@ -189,6 +227,13 @@ class TvAccessibilityService : AccessibilityService() {
         if (action == "release") return
         val lower = name.lowercase()
         val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // Route typing & navigation keys through IME first when an input connection is active
+        if (lower != "esc" && lower != "browser_back" && lower != "win" && lower != "cmd" && lower != "home" && !lower.startsWith("media_")) {
+            if (TvKeyboardImeService.instance?.handleKeyFromRemote(name) == true) {
+                return
+            }
+        }
 
         when (lower) {
             "esc", "browser_back" -> performGlobalAction(GLOBAL_ACTION_BACK)
@@ -215,7 +260,34 @@ class TvAccessibilityService : AccessibilityService() {
             "media_play_pause" -> dispatchMediaKey(audio, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
             "media_next" -> dispatchMediaKey(audio, KeyEvent.KEYCODE_MEDIA_NEXT)
             "media_previous" -> dispatchMediaKey(audio, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-            "enter", "space" -> clickFocusedOrCursor()
+            "space" -> {
+                mainHandler.post {
+                    val editable = findEditableNode()
+                    if (editable != null) {
+                        val existing = editable.text?.toString() ?: ""
+                        val args = Bundle().apply {
+                            putCharSequence(
+                                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                                "$existing "
+                            )
+                        }
+                        editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                    } else {
+                        clickFocusedOrCursor()
+                    }
+                }
+            }
+            "enter" -> {
+                mainHandler.post {
+                    val editable = findEditableNode()
+                    if (editable != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        if (editable.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) {
+                            return@post
+                        }
+                    }
+                    clickFocusedOrCursor()
+                }
+            }
             "backspace" -> handleBackspace()
             "up" -> moveFocusOrCursor(0f, -60f)
             "down" -> moveFocusOrCursor(0f, 60f)
@@ -248,7 +320,7 @@ class TvAccessibilityService : AccessibilityService() {
 
     private fun handleBackspace() {
         mainHandler.post {
-            val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            val focused = findEditableNode()
             if (focused != null) {
                 val existing = focused.text?.toString() ?: ""
                 if (existing.isNotEmpty()) {
